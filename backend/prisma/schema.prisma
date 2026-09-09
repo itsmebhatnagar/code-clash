@@ -1,0 +1,104 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id           String   @id @default(uuid())
+  name         String
+  email        String   @unique
+  passwordHash String
+  role         String   @default("PARTICIPANT") // PARTICIPANT, ADMIN, JUDGE
+  college      String?
+  collegeId    String?
+  phone        String?
+  status       String   @default("REGISTERED") // REGISTERED, CHECKED_IN, DISQUALIFIED
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  workstation  Workstation?
+  submissions  Submission[]
+  evaluations  Evaluation[]
+}
+
+model Workstation {
+  id            String   @id @default(uuid())
+  pcNumber      String   @unique
+  participantId String?  @unique
+  participant   User?    @relation(fields: [participantId], references: [id])
+}
+
+model Round {
+  id        String      @id @default(uuid())
+  name      String
+  duration  Int         // in minutes
+  startTime DateTime?
+  endTime   DateTime?
+  status    String      @default("PENDING") // PENDING, ACTIVE, PAUSED, ENDED
+  problems  Problem[]
+}
+
+model Problem {
+  id           String   @id @default(uuid())
+  title        String
+  description  String
+  inputFormat  String
+  outputFormat String
+  constraints  String
+  difficulty   String
+  timeLimit    Int      // in milliseconds
+  memoryLimit  Int      // in MB
+  roundId      String
+  round        Round    @relation(fields: [roundId], references: [id])
+
+  submissions  Submission[]
+  testCases    TestCase[]
+}
+
+model TestCase {
+  id        String  @id @default(uuid())
+  problemId String
+  problem   Problem @relation(fields: [problemId], references: [id])
+  input     String
+  output    String
+  isHidden  Boolean @default(true)
+}
+
+model Submission {
+  id            String   @id @default(uuid())
+  participantId String
+  participant   User     @relation(fields: [participantId], references: [id])
+  problemId     String
+  problem       Problem  @relation(fields: [problemId], references: [id])
+  language      String
+  sourceCode    String
+  status        String   // PENDING, ACCEPTED, WRONG_ANSWER, COMPILE_ERROR, RUNTIME_ERROR
+  executionTime Int?     // in ms
+  passedCases   Int      @default(0)
+  totalCases    Int      @default(0)
+  createdAt     DateTime @default(now())
+}
+
+model Evaluation {
+  id                String   @id @default(uuid())
+  participantId     String
+  participant       User     @relation(fields: [participantId], references: [id])
+  round1Score       Int      @default(0)
+  round2Score       Int      @default(0)
+  manualAdjustments Int      @default(0)
+  judgeComments     String?
+  finalScore        Int      @default(0)
+  updatedAt         DateTime @updatedAt
+}
+
+model AuditLog {
+  id          String   @id @default(uuid())
+  adminId     String
+  actionType  String
+  description String
+  timestamp   DateTime @default(now())
+}
