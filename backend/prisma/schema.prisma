@@ -17,6 +17,10 @@ model User {
   collegeId    String?
   phone        String?
   status       String   @default("REGISTERED") // REGISTERED, CHECKED_IN, DISQUALIFIED
+  collegeIdVerified Boolean @default(false)
+  checkedInAt  DateTime?
+  disqualificationReason String?
+  lockedAt     DateTime?
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
 
@@ -39,6 +43,9 @@ model Round {
   startTime DateTime?
   endTime   DateTime?
   status    String      @default("PENDING") // PENDING, ACTIVE, PAUSED, ENDED
+  lateEntryCutoffMinutes Int @default(10)
+  autoSubmitOnEnd Boolean @default(true)
+  pausedAt  DateTime?
   problems  Problem[]
 }
 
@@ -57,6 +64,16 @@ model Problem {
 
   submissions  Submission[]
   testCases    TestCase[]
+  examples     ProblemExample[]
+}
+
+model ProblemExample {
+  id        String   @id @default(uuid())
+  problemId String
+  input     String
+  output    String
+  explanation String?
+  problem   Problem  @relation(fields: [problemId], references: [id], onDelete: Cascade)
 }
 
 model TestCase {
@@ -84,15 +101,20 @@ model Submission {
 }
 
 model Evaluation {
-  id                String   @id @default(uuid())
-  participantId     String
-  participant       User     @relation(fields: [participantId], references: [id])
-  round1Score       Int      @default(0)
-  round2Score       Int      @default(0)
-  manualAdjustments Int      @default(0)
+  id                String   @id @default(cuid())
+  participantId     String   @unique
+  round1Score       Float    @default(0)
+  round2Score       Float    @default(0)
+  manualAdjustments Float    @default(0)
   judgeComments     String?
-  finalScore        Int      @default(0)
+  codeQuality       Float    @default(0)
+  logicClarity      Float    @default(0)
+  finalScore        Float    @default(0)
   updatedAt         DateTime @updatedAt
+  lockedAt          DateTime?
+  lockedBy          String?
+
+  participant       User     @relation(fields: [participantId], references: [id])
 }
 
 model AuditLog {
@@ -101,4 +123,60 @@ model AuditLog {
   actionType  String
   description String
   timestamp   DateTime @default(now())
+}
+
+model ParticipantStatusHistory {
+  id            String   @id @default(uuid())
+  participantId String
+  adminId       String
+  fromStatus    String?
+  toStatus      String
+  reason        String?
+  createdAt     DateTime @default(now())
+}
+
+model WorkstationAssignmentHistory {
+  id            String   @id @default(uuid())
+  workstationId String
+  pcNumber      String
+  participantId String?
+  adminId       String
+  action        String
+  createdAt     DateTime @default(now())
+}
+
+model ScoreAdjustment {
+  id                String   @id @default(uuid())
+  participantId     String
+  adminId           String
+  round1Score       Float
+  round2Score       Float
+  manualAdjustments Float
+  finalScore        Float
+  reason            String
+  reversedAt        DateTime?
+  reversedBy        String?
+  createdAt         DateTime @default(now())
+}
+
+model ContestSetting {
+  id        String   @id @default(uuid())
+  key       String   @unique
+  value     String
+  updatedBy String
+  updatedAt DateTime @updatedAt
+}
+
+model SuddenDeathRound {
+  id                  String   @id @default(uuid())
+  name                String
+  duration            Int
+  status              String   @default("PENDING")
+  participantIds      String
+  problemId           String?
+  bonusPoints         Float    @default(0)
+  startTime           DateTime?
+  endTime             DateTime?
+  createdBy           String
+  createdAt           DateTime @default(now())
 }

@@ -1,108 +1,49 @@
-import { Router, Request, Response } from 'express';
+import { Router } from 'express';
+import { Server } from 'socket.io';
 import bcrypt from 'bcrypt';
 import jwt from 'jsonwebtoken';
 import { PrismaClient } from '@prisma/client';
 import { authenticate } from '../middleware/authMiddleware';
+import { getAdminMetrics } from '../presence';
+import { recordAuditLog } from '../audit';
+import { asyncHandler } from '../middleware/asyncHandler';
+import { AppError } from '../middleware/errorMiddleware';
 
-const router = Router();
 const prisma = new PrismaClient();
-const JWT_SECRET = process.env.JWT_SECRET || 'super_secret_code_clash_key_for_dev_only';
+const JWT_SECRET = process.env.JWT_SECRET;
+if (!JWT_SECRET) throw new Error('JWT_SECRET is not configured');
 
-router.post('/register', async (req: Request, res: Response): Promise<void> => {
-  try {
+export default function createAuthRouter(io: Server) {
+  const router = Router();
+
+  router.post('/register', asyncHandler(async (req, res) => {
     const { name, email, password, college, collegeId, phone } = req.body;
+    if (!name || !email || !password) throw new AppError(400, 'Name, email, and password are required');
+    if (await prisma.user.findUnique({ where: { email } })) throw new AppError(400, 'User with this email already exists');
 
-    if (!name || !email || !password) {
-      res.status(400).json({ error: 'Name, email, and password are required' });
-      return;
-    }
+    const passwordHash = await bcrypt.hash(password, await bcrypt.genSalt(10));
+    const user = await prisma.user.create({ data: { name, email, passwordHash, college, collegeId, phone, role: 'PARTICIPANT', status: 'REGISTERED' } });
+    io.to('ADMIN').emit('PARTICIPANT_REGISTERED', { id: user.id, name: user.name, email: user.email, college: user.college, collegeId: user.collegeId, status: user.status, workstation: null });
+    void getAdminMetrics().then((metrics) => io.to('ADMIN').emit('ADMIN_METRICS_UPDATE', metrics));
+    const token = jwt.sign({ id: user.id, role: user.role }, JWT_SECRET!, { expiresIn: '1d' });
+    res.status(201).json({ message: 'Registration successful', token, user: { id: user.id, name: user.name, email: user.email, role: user.role, status: user.status } });
+  }));
 
-    const existingUser = await prisma.user.findUnique({ where: { email } });
-    if (existingUser) {
-      res.status(400).json({ error: 'User with this email already exists' });
-      return;
-    }
-
-    const salt = await bcrypt.genSalt(10);
-    const passwordHash = await bcrypt.hash(password, salt);
-
-    const user = await prisma.user.create({
-      data: {
-        name,
-        email,
-        passwordHash,
-        college,
-        collegeId,
-        phone,
-        role: 'PARTICIPANT',
-        status: 'REGISTERED',
-      },
-    });
-
-    const token = jwt.sign({ id: user.id, role: user.role }, JWT_SECRET, { expiresIn: '1d' });
-
-    res.status(201).json({
-      message: 'Registration successful',
-      token,
-      user: { id: user.id, name: user.name, email: user.email, role: user.role, status: user.status }
-    });
-  } catch (error) {
-    console.error('Registration error:', error);
-    res.status(500).json({ error: 'Internal server error' });
-  }
-});
-
-router.post('/login', async (req: Request, res: Response): Promise<void> => {
-  try {
+  router.post('/login', asyncHandler(async (req, res) => {
     const { email, password } = req.body;
-
-    if (!email || !password) {
-      res.status(400).json({ error: 'Email and password are required' });
-      return;
-    }
-
+    if (!email || !password) throw new AppError(400, 'Email and password are required');
     const user = await prisma.user.findUnique({ where: { email } });
-    if (!user) {
-      res.status(401).json({ error: 'Invalid credentials' });
-      return;
-    }
+    if (!user || !(await bcrypt.compare(password, user.passwordHash))) throw new AppError(401, 'Invalid credentials');
+    const token = jwt.sign({ id: user.id, role: user.role }, JWT_SECRET!, { expiresIn: '1d' });
+    if (user.role === 'ADMIN') await recordAuditLog(user.id, 'ADMIN_LOGIN', `Admin ${user.email} logged in successfully`);
+    res.json({ message: 'Login successful', token, user: { id: user.id, name: user.name, email: user.email, role: user.role, status: user.status } });
+  }));
 
-    const isMatch = await bcrypt.compare(password, user.passwordHash);
-    if (!isMatch) {
-      res.status(401).json({ error: 'Invalid credentials' });
-      return;
-    }
-
-    const token = jwt.sign({ id: user.id, role: user.role }, JWT_SECRET, { expiresIn: '1d' });
-
-    res.json({
-      message: 'Login successful',
-      token,
-      user: { id: user.id, name: user.name, email: user.email, role: user.role, status: user.status }
-    });
-  } catch (error) {
-    console.error('Login error:', error);
-    res.status(500).json({ error: 'Internal server error' });
-  }
-});
-
-router.get('/me', authenticate, async (req: any, res: Response): Promise<void> => {
-  try {
-    const user = await prisma.user.findUnique({
-      where: { id: req.user.id },
-      select: { id: true, name: true, email: true, role: true, status: true, college: true, collegeId: true }
-    });
-
-    if (!user) {
-      res.status(404).json({ error: 'User not found' });
-      return;
-    }
-
+  router.get('/me', authenticate, asyncHandler(async (req: any, res) => {
+    const user = await prisma.user.findUnique({ where: { id: req.user.id }, select: { id: true, name: true, email: true, role: true, status: true, college: true, collegeId: true } });
+    if (!user) throw new AppError(404, 'User not found');
     res.json({ user });
-  } catch (error) {
-    console.error('Get user error:', error);
-    res.status(500).json({ error: 'Internal server error' });
-  }
-});
+  }));
 
-export default router;
+  return router;
+}

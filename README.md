@@ -57,6 +57,8 @@ code-clash/
 
 ## Getting Started
 
+This repository uses **npm** as its package manager. Keep `package-lock.json` committed and use `npm` commands for the frontend.
+
 ### Prerequisites
 
 Make sure the following are installed:
@@ -87,9 +89,22 @@ Example:
 ```env
 DATABASE_URL="postgresql://USERNAME:PASSWORD@HOST:5432/DATABASE_NAME"
 JWT_SECRET="your-secure-jwt-secret"
+FRONTEND_URL="https://your-frontend.vercel.app"
 ```
 
-Then generate/apply the Prisma client and database schema as required by the current Prisma configuration.
+Apply the committed migration history and generate the Prisma client:
+
+```bash
+npx prisma migrate deploy
+npx prisma generate
+```
+
+For an existing database that was previously created with `prisma db push`, mark the baseline as already applied once before deploying:
+
+```bash
+npx prisma migrate resolve --applied 20260910120000_baseline
+npx prisma migrate deploy
+```
 
 Start the backend using the development command configured for your local setup.
 
@@ -108,6 +123,8 @@ The Next.js development server will start locally. Open the URL shown in the ter
 ```text
 http://localhost:3000
 ```
+
+Use `npm run dev` to start development; `npm dev` is not an npm command.
 
 ## Available Frontend Scripts
 
@@ -129,6 +146,7 @@ Typical backend configuration includes:
 | -------------- | ---------------------------- |
 | `DATABASE_URL` | PostgreSQL connection string |
 | `JWT_SECRET`   | Secret used to sign JWTs     |
+| `FRONTEND_URL` | Allowed frontend origin(s)  |
 
 Add any frontend environment variables required by your local deployment configuration.
 

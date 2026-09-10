@@ -5,7 +5,6 @@ import './globals.css'
 export const metadata: Metadata = {
   title: 'CODE CLASH — Contest Control Room',
   description: 'A live coding contest platform for participants, admins, and judges.',
-  generator: 'v0.app',
   icons: {
     icon: [
       {
