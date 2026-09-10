@@ -1,226 +1,1009 @@
-# Code Clash
+# ⚓ Code Clash
 
-A full-stack coding competition platform designed to manage coding contests, participants, authentication, and real-time contest interactions from a single application.
+### **Outcode. Outlast. Claim the Treasure.**
 
-## Overview
+**Code Clash** is a full-stack competitive programming and coding competition platform built to run real-time coding contests with dedicated **Participant** and **Admin** experiences.
 
-Code Clash is organized as a separate frontend and backend application:
+It provides everything required to conduct a structured coding competition — from participant registration and workstation assignment to live rounds, code submission, automated judging, scoring, evaluations, leaderboards, audit logs, and sudden-death rounds.
 
-* **Frontend** — Next.js application with React, TypeScript, Tailwind CSS, shadcn-based UI components, and Vercel Analytics.
-* **Backend** — Node.js + Express API with JWT authentication, bcrypt password hashing, Prisma ORM, PostgreSQL support, and Socket.IO for real-time communication.
+---
 
-## Tech Stack
+## 🚀 Features
 
-### Frontend
+### 👨‍💻 Participant Platform
 
-* Next.js 16
-* React 19
-* TypeScript
-* Tailwind CSS
-* shadcn/ui
-* Lucide React
-* Socket.IO Client
-* Vercel Analytics
+* Secure participant authentication
+* Participant-specific profile and identity
+* College and College ID information
+* Check-in status
+* Workstation assignment
+* Live contest dashboard
+* Active round information
+* Real-time countdown
+* Problem statements
+* Input / Output formats
+* Constraints and examples
+* Multi-language code submission
+* Automated code judging
+* Submission status tracking
+* Execution time and test-case results
+* Submission history
+* Live leaderboard
+* Competition rules
+* Participant status handling
+* Automatic submission handling when a round ends
 
-### Backend
+### 🧑‍✈️ Admin Command Center
+
+The Admin panel provides complete control over the competition.
+
+#### Participant Management
+
+* Create participants
+* Search participants
+* View participant details
+* Update participant information
+* Check-in participants
+* Verify College ID
+* Disqualify participants
+* Record disqualification reasons
+* Participant status history
+* Participant activity tracking
+
+#### Workstation Management
+
+* Create and manage workstations
+* Assign participants to PCs
+* Release workstations
+* View workstation status
+* Track workstation assignment history
+* Monitor participant-to-PC mapping
+
+#### Round Management
+
+* Create coding rounds
+* Configure round duration
+* Start rounds
+* Pause rounds
+* End rounds
+* Reset rounds
+* Configure late-entry cutoff
+* Configure automatic submission on round end
+* Real-time round state synchronization
+
+#### Problem Management
+
+* Create problems
+* Edit problems
+* Delete problems
+* Duplicate problems
+* Assign problems to rounds
+* Configure difficulty
+* Configure time limits
+* Configure memory limits
+* Add public examples
+* Add hidden test cases
+* Manage test cases
+
+#### Submission Management
+
+* View all submissions
+* Filter by participant
+* Filter by problem
+* Filter by status
+* Inspect individual submissions
+* View judging results
+* Track execution time
+* Track passed test cases
+
+#### Evaluation & Scoring
+
+* Round-wise scoring
+* Manual score adjustments
+* Code quality scoring
+* Logic clarity scoring
+* Judge comments
+* Final score calculation
+* Evaluation locking
+* Evaluation unlocking
+* Score adjustment history
+* Score adjustment reversal
+* Audit trail for score changes
+
+#### Leaderboard
+
+* Live participant rankings
+* Final scores
+* Rank calculation
+* Disqualified participant exclusion
+* Real-time competition visibility
+
+#### Sudden Death
+
+* Create sudden-death rounds
+* Select participants
+* Configure duration
+* Configure bonus points
+* Assign a problem
+* Start sudden death
+* End sudden death
+
+#### Audit Logs
+
+Track important administrative actions including:
+
+* Participant check-ins
+* Participant disqualifications
+* Workstation assignments
+* Problem creation
+* Problem updates
+* Score adjustments
+* Evaluation actions
+* Round actions
+* Sudden-death actions
+
+---
+
+# ⚔️ Automated Code Judge
+
+Code Clash includes a dedicated backend judging worker for evaluating participant submissions.
+
+### Supported Languages
+
+| Language             | Support |
+| -------------------- | ------- |
+| C++                  | ✅       |
+| Java                 | ✅       |
+| Python               | ✅       |
+| JavaScript / Node.js | ✅       |
+
+### Judging Flow
+
+```text
+Participant
+     │
+     ▼
+Submit Code
+     │
+     ▼
+Create Submission
+     │
+     ▼
+PENDING
+     │
+     ▼
+Judge Worker Queue
+     │
+     ▼
+Compile / Execute
+     │
+     ▼
+Run Test Cases
+     │
+     ├── ACCEPTED
+     ├── WRONG ANSWER
+     ├── TIME LIMIT EXCEEDED
+     ├── RUNTIME ERROR
+     ├── OUTPUT LIMIT EXCEEDED
+     └── COMPILE ERROR
+```
+
+The judge worker supports:
+
+* Per-test-case execution
+* Execution time limits
+* Memory configuration
+* Output size limits
+* Compilation handling
+* Runtime error detection
+* Output normalization
+* Temporary workspaces
+* Automatic workspace cleanup
+* Real-time submission result delivery through Socket.IO
+
+> **Production Security Note:** Running arbitrary participant code requires proper OS/container sandboxing. A production deployment should isolate judge execution using containers or another hardened sandboxing mechanism.
+
+---
+
+# ⚡ Real-Time Competition System
+
+Code Clash uses **Socket.IO** for real-time communication.
+
+Real-time functionality includes:
+
+* Round state synchronization
+* Countdown synchronization
+* Participant presence
+* Admin metrics
+* Submission results
+* Round start
+* Round pause
+* Round end
+* Automatic participant notifications
+* Live competition state
+
+### Real-Time Architecture
+
+```text
+                 ┌────────────────────┐
+                 │    Participant UI  │
+                 └─────────┬──────────┘
+                           │
+                           │ WebSocket
+                           ▼
+                 ┌────────────────────┐
+                 │     Socket.IO      │
+                 │      Server        │
+                 └─────────┬──────────┘
+                           │
+              ┌────────────┼────────────┐
+              ▼            ▼            ▼
+          Participants    Admin       Metrics
+```
+
+---
+
+# 🏗️ Architecture
+
+```text
+                         ┌────────────────────────┐
+                         │      CODE CLASH        │
+                         │     Next.js Frontend   │
+                         └───────────┬────────────┘
+                                     │
+                              HTTP / WebSocket
+                                     │
+                         ┌───────────▼────────────┐
+                         │      Express API       │
+                         │       + Socket.IO      │
+                         └───────────┬────────────┘
+                                     │
+                    ┌────────────────┼────────────────┐
+                    │                │                │
+                    ▼                ▼                ▼
+                Auth API        Contest API       Admin API
+                    │                │                │
+                    └────────────────┼────────────────┘
+                                     │
+                              ┌──────▼──────┐
+                              │   Prisma    │
+                              │     ORM     │
+                              └──────┬──────┘
+                                     │
+                              ┌──────▼──────┐
+                              │  Database   │
+                              └─────────────┘
+
+                                     │
+                              Submissions
+                                     │
+                              ┌──────▼──────┐
+                              │ Judge Worker│
+                              └──────┬──────┘
+                                     │
+                              Compile / Run
+                                     │
+                              Test Cases
+                                     │
+                              Judge Result
+```
+
+---
+
+# 🛠️ Tech Stack
+
+## Frontend
+
+* **Next.js 16**
+* **React 19**
+* **TypeScript**
+* **Tailwind CSS**
+* **shadcn/ui**
+* **Lucide React**
+* **Socket.IO Client**
+* **Vercel Analytics**
+
+## Backend
+
+* **Node.js**
+* **Express 5**
+* **TypeScript**
+* **Prisma ORM**
+* **Socket.IO**
+* **JWT**
+* **bcrypt**
+* **CORS**
+* **dotenv**
+
+## Database
+
+* Prisma ORM
+* PostgreSQL-ready architecture
+* Prisma migrations
+
+## Code Judge
 
 * Node.js
-* Express 5
-* TypeScript
-* Prisma ORM
-* PostgreSQL
-* Socket.IO
-* JSON Web Tokens (JWT)
-* bcrypt
-* CORS
-* dotenv
+* Python
+* GCC / G++
+* Java / Javac
+* Temporary isolated workspaces
+* Process timeout handling
+* Output limits
 
-## Project Structure
+---
+
+# 📁 Project Structure
 
 ```text
 code-clash/
-├── frontend/          # Next.js frontend application
-│   ├── app/            # Application routes and pages
-│   ├── components/     # Reusable UI components
-│   ├── lib/            # Client-side utilities and helpers
-│   ├── public/         # Static assets
-│   └── package.json
 │
-├── backend/            # Express backend application
-│   ├── prisma/          # Prisma schema and database configuration
-│   ├── src/             # Backend source code
+├── frontend/
+│   ├── app/
+│   │   ├── globals.css
+│   │   ├── layout.tsx
+│   │   └── page.tsx
+│   │
+│   ├── components/
+│   │   ├── admin/
+│   │   └── ...
+│   │
+│   ├── lib/
+│   ├── public/
+│   ├── package.json
+│   └── package-lock.json
+│
+├── backend/
+│   ├── prisma/
+│   │   ├── migrations/
+│   │   └── schema.prisma
+│   │
+│   ├── src/
+│   │   ├── middleware/
+│   │   │   ├── asyncHandler.ts
+│   │   │   ├── authMiddleware.ts
+│   │   │   └── errorMiddleware.ts
+│   │   │
+│   │   ├── routes/
+│   │   │   ├── admin.ts
+│   │   │   ├── auth.ts
+│   │   │   ├── contest.ts
+│   │   │   └── leaderboard.ts
+│   │   │
+│   │   ├── audit.ts
+│   │   ├── index.ts
+│   │   ├── judgeWorker.ts
+│   │   ├── presence.ts
+│   │   └── sockets.ts
+│   │
 │   ├── prisma.config.ts
-│   └── package.json
+│   ├── package.json
+│   └── tsconfig.json
 │
 └── README.md
 ```
 
-## Getting Started
+---
 
-This repository uses **npm** as its package manager. Keep `package-lock.json` committed and use `npm` commands for the frontend.
+# 🗄️ Data Model
 
-### Prerequisites
+The platform uses Prisma to manage the competition data model.
 
-Make sure the following are installed:
+Core entities include:
+
+```text
+User
+ │
+ ├── Workstation
+ ├── Submission[]
+ └── Evaluation
+       
+Round
+ │
+ └── Problem[]
+       │
+       ├── TestCase[]
+       └── ProblemExample[]
+
+AuditLog
+
+ParticipantStatusHistory
+
+WorkstationAssignmentHistory
+
+ScoreAdjustment
+
+ContestSetting
+
+SuddenDeathRound
+```
+
+### Participant Identity
+
+Every participant has a unique database identity.
+
+```text
+Participant
+   │
+   ├── Unique ID
+   ├── Name
+   ├── Email
+   ├── College
+   ├── College ID
+   ├── Phone
+   ├── Status
+   ├── Workstation
+   ├── Submissions
+   └── Evaluation
+```
+
+Each participant has a unique `Evaluation` record, allowing their competition score and judging information to be managed independently.
+
+---
+
+# 🔐 Authentication & Security
+
+The backend implements:
+
+* JWT authentication
+* Role-based authorization
+* Admin-only routes
+* Participant-only submission access
+* bcrypt password hashing
+* Environment-based JWT secret
+* Protected Socket.IO authentication
+* Disqualified participant restrictions
+* Round/problem validation
+* Source-code size limits
+* Execution time limits
+* Output size limits
+
+### Roles
+
+```text
+ADMIN
+JUDGE
+PARTICIPANT
+```
+
+---
+
+# ⚙️ Getting Started
+
+## Prerequisites
+
+Install:
 
 * Node.js 18+
 * npm
-* PostgreSQL database
 * Git
+* PostgreSQL
+* GCC / G++
+* Java JDK
+* Python 3
 
-### 1. Clone the repository
+> C++, Java, Python, and Node.js must be available on the machine running the judge worker.
+
+---
+
+## 1. Clone the Repository
 
 ```bash
 git clone https://github.com/itsmebhatnagar/code-clash.git
 cd code-clash
 ```
 
-### 2. Setup the backend
+---
+
+# 2. Backend Setup
 
 ```bash
 cd backend
 npm install
 ```
 
-Create a `.env` file in the `backend` directory and configure the database and authentication settings required by the application.
+Create:
+
+```text
+backend/.env
+```
 
 Example:
 
 ```env
 DATABASE_URL="postgresql://USERNAME:PASSWORD@HOST:5432/DATABASE_NAME"
-JWT_SECRET="your-secure-jwt-secret"
-FRONTEND_URL="https://your-frontend.vercel.app"
+JWT_SECRET="your-secure-random-secret"
+FRONTEND_URL="http://localhost:3000"
+PORT=5000
 ```
 
-Apply the committed migration history and generate the Prisma client:
+Generate Prisma Client:
 
 ```bash
-npx prisma migrate deploy
 npx prisma generate
 ```
 
-For an existing database that was previously created with `prisma db push`, mark the baseline as already applied once before deploying:
+Apply migrations:
+
+```bash
+npx prisma migrate deploy
+```
+
+For a database that was previously created using `prisma db push`, apply the existing baseline once:
 
 ```bash
 npx prisma migrate resolve --applied 20260910120000_baseline
 npx prisma migrate deploy
 ```
 
-Start the backend using the development command configured for your local setup.
+Start the backend:
 
-### 3. Setup the frontend
+```bash
+npm run dev
+```
 
-Open a new terminal:
+Backend:
+
+```text
+http://localhost:5000
+```
+
+Health check:
+
+```text
+GET /api/health
+```
+
+---
+
+# 3. Frontend Setup
+
+Open another terminal:
 
 ```bash
 cd frontend
 npm install
+```
+
+Create:
+
+```text
+frontend/.env.local
+```
+
+Configure the frontend API and Socket.IO endpoints according to your deployment setup.
+
+For local development, the backend normally runs on:
+
+```text
+http://localhost:5000
+```
+
+Start Next.js:
+
+```bash
 npm run dev
 ```
 
-The Next.js development server will start locally. Open the URL shown in the terminal, typically:
+Frontend:
 
 ```text
 http://localhost:3000
 ```
 
-Use `npm run dev` to start development; `npm dev` is not an npm command.
+---
 
-## Available Frontend Scripts
+# 📜 Available Scripts
 
-From `frontend/`:
+## Frontend
 
 ```bash
-npm run dev      # Start development server
-npm run build    # Create production build
-npm run start    # Start production server
+npm run dev
+npm run build
+npm run start
 ```
 
-## Environment Variables
+## Backend
 
-Keep secrets and environment-specific configuration out of version control.
+```bash
+npm run dev
+```
 
-Typical backend configuration includes:
+---
 
-| Variable       | Purpose                      |
-| -------------- | ---------------------------- |
-| `DATABASE_URL` | PostgreSQL connection string |
-| `JWT_SECRET`   | Secret used to sign JWTs     |
-| `FRONTEND_URL` | Allowed frontend origin(s)  |
+# 🌐 API Overview
 
-Add any frontend environment variables required by your local deployment configuration.
-
-## Architecture
+## Authentication
 
 ```text
-                    ┌─────────────────────┐
-                    │     Code Clash      │
-                    │      Frontend       │
-                    │    Next.js/React    │
-                    └──────────┬──────────┘
-                               │
-                         HTTP / WebSocket
-                               │
-                    ┌──────────▼──────────┐
-                    │       Backend       │
-                    │ Express + Socket.IO │
-                    └──────────┬──────────┘
-                               │
-                     ┌─────────▼─────────┐
-                     │      Prisma       │
-                     │        ORM        │
-                     └─────────┬─────────┘
-                               │
-                     ┌─────────▼─────────┐
-                     │    PostgreSQL     │
-                     └───────────────────┘
+POST /api/auth/register
+POST /api/auth/login
+GET  /api/auth/me
 ```
 
-## Authentication & Security
+## Participant / Contest
 
-The backend includes JWT-based authentication and bcrypt for password hashing.
+```text
+GET  /api/contest/assignment
+POST /api/contest/submit
+GET  /api/contest/submissions/:id
+```
 
-Environment secrets such as database credentials and JWT secrets should be stored in `.env` files or deployment-platform environment settings and should never be committed to Git.
+## Leaderboard
 
-## Development Notes
+```text
+GET /api/leaderboard
+```
 
-The project is intentionally split into independent `frontend` and `backend` directories so each layer can be developed and deployed separately.
+## Admin
 
-For real-time functionality, the frontend uses `socket.io-client` while the backend uses `socket.io`.
+```text
+GET    /api/admin/participants
+POST   /api/admin/participants
+PUT    /api/admin/participants/:id
+DELETE /api/admin/participants/:id
 
-## Deployment
+GET    /api/admin/workstations
+POST   /api/admin/workstations/assign
+DELETE /api/admin/workstations/:id/release
 
-The frontend can be deployed to platforms that support Next.js, such as Vercel.
+GET    /api/admin/problems
+POST   /api/admin/problems
+PUT    /api/admin/problems/:id
+DELETE /api/admin/problems/:id
 
-The backend should be deployed separately to a Node.js-compatible hosting environment with access to the configured PostgreSQL database.
+GET    /api/admin/rounds
+POST   /api/admin/rounds
+PUT    /api/admin/rounds/:id
 
-Before production deployment, configure all required environment variables and verify the database connection and CORS settings for the deployed frontend/backend origins.
+GET    /api/admin/submissions
+GET    /api/admin/evaluations
 
-## Contributing
+PUT    /api/admin/evaluations/:participantId
 
-1. Fork the repository.
-2. Create a feature branch:
+GET    /api/admin/audit-logs
+
+GET    /api/admin/settings
+PUT    /api/admin/settings/:key
+
+GET    /api/admin/sudden-death
+POST   /api/admin/sudden-death
+```
+
+---
+
+# 🧭 Competition Flow
+
+A typical Code Clash event can follow this flow:
+
+```text
+1. Admin creates competition
+          ↓
+2. Admin creates rounds
+          ↓
+3. Admin creates coding problems
+          ↓
+4. Admin adds examples + hidden test cases
+          ↓
+5. Participants register
+          ↓
+6. Admin verifies / checks in participants
+          ↓
+7. Workstations are assigned
+          ↓
+8. Admin starts Round 1
+          ↓
+9. Participants receive problems
+          ↓
+10. Participants write code
+          ↓
+11. Code is submitted
+          ↓
+12. Judge Worker evaluates submission
+          ↓
+13. Score is calculated
+          ↓
+14. Leaderboard updates
+          ↓
+15. Round ends
+          ↓
+16. Next round / evaluation
+          ↓
+17. Sudden Death if required
+          ↓
+18. Final leaderboard
+          ↓
+19. Scores are locked
+```
+
+---
+
+# 🏆 Scoring & Evaluation
+
+Each participant can have a dedicated evaluation containing:
+
+```text
+Round 1 Score
+Round 2 Score
+Manual Adjustments
+Code Quality
+Logic Clarity
+Judge Comments
+Final Score
+```
+
+Administrative score changes are tracked through:
+
+```text
+Score Adjustment
+       │
+       ├── Admin
+       ├── Participant
+       ├── Previous Score
+       ├── New Score
+       ├── Reason
+       ├── Timestamp
+       └── Reversal Information
+```
+
+This provides an auditable scoring workflow for competition organizers.
+
+---
+
+# 🎯 Production Deployment
+
+Recommended production architecture:
+
+```text
+                    Internet
+                       │
+                       ▼
+              ┌─────────────────┐
+              │    Next.js      │
+              │     Vercel      │
+              └────────┬────────┘
+                       │
+                       ▼
+              ┌─────────────────┐
+              │  Express API    │
+              │  + Socket.IO    │
+              └────────┬────────┘
+                       │
+              ┌────────┴────────┐
+              ▼                 ▼
+       ┌─────────────┐   ┌─────────────┐
+       │ PostgreSQL  │   │ Redis/Queue │
+       └─────────────┘   └──────┬──────┘
+                                │
+                         ┌──────▼──────┐
+                         │ Judge Worker│
+                         │  Containers │
+                         └─────────────┘
+```
+
+### Recommended deployment split
+
+**Frontend**
+
+* Vercel
+* Next.js
+
+**Backend**
+
+* Railway
+* Render
+* Fly.io
+* VPS / cloud server
+
+**Database**
+
+* PostgreSQL
+
+**Queue**
+
+* Redis + BullMQ
+
+**Judge**
+
+* Dedicated isolated worker machines/containers
+
+---
+
+# ⚠️ Production Security Considerations
+
+Before exposing Code Clash to the public internet, the following should be implemented or hardened:
+
+* Containerized code execution
+* Network isolation for judge processes
+* CPU quotas
+* Memory quotas
+* Process limits
+* Filesystem restrictions
+* Submission rate limiting
+* Login rate limiting
+* Strict CORS configuration
+* Production HTTPS
+* Secure authentication cookies
+* PostgreSQL for production
+* Persistent submission queue
+* Worker retry mechanism
+* Server-authoritative contest deadlines
+* Monitoring and logging
+
+**Never execute untrusted participant code directly on the same unrestricted host environment as the API/database.**
+
+---
+
+# 🧪 Development Philosophy
+
+Code Clash is designed around four major principles:
+
+### 1. Fairness
+
+Every participant should compete under the same rules, time limits, test cases, and judging conditions.
+
+### 2. Real-Time Competition
+
+Important contest events should propagate instantly between admins, participants, and the server.
+
+### 3. Auditability
+
+Important administrative decisions, especially participant status and score changes, should be traceable.
+
+### 4. Separation of Responsibilities
+
+```text
+Frontend
+    ↓
+API
+    ↓
+Database
+
+Submission
+    ↓
+Judge Worker
+    ↓
+Scoring
+    ↓
+Leaderboard
+```
+
+The judging system is separated from the main API to allow the platform to evolve toward scalable worker infrastructure.
+
+---
+
+# 🎨 UI / Design Direction
+
+Code Clash uses a **premium pirate command-center aesthetic**.
+
+The visual identity combines:
+
+* Competitive programming
+* Hacker / esports interfaces
+* Pirate command decks
+* Treasure maps
+* Naval navigation
+* Antique gold accents
+* Deep ocean colors
+* Dark command-center surfaces
+
+The pirate theme is intentionally sophisticated rather than cartoonish.
+
+### Brand
+
+**CODE CLASH**
+
+> *Outcode. Outlast. Claim the Treasure.*
+
+---
+
+# 🛣️ Roadmap
+
+### Completed
+
+* [x] Participant authentication
+* [x] Admin authentication
+* [x] Role-based authorization
+* [x] Participant management
+* [x] Participant check-in
+* [x] Participant status history
+* [x] Workstation assignment
+* [x] Workstation history
+* [x] Round management
+* [x] Problem management
+* [x] Test case management
+* [x] Problem duplication
+* [x] Code submission
+* [x] Automated judging worker
+* [x] C++ judging
+* [x] Java judging
+* [x] Python judging
+* [x] JavaScript judging
+* [x] Submission result tracking
+* [x] Socket.IO real-time communication
+* [x] Evaluation management
+* [x] Score locking
+* [x] Score adjustment history
+* [x] Score reversal
+* [x] Audit logs
+* [x] Contest settings
+* [x] Sudden-death rounds
+* [x] Prisma migration setup
+
+### Next
+
+* [ ] Docker-based judge sandbox
+* [ ] Redis + BullMQ submission queue
+* [ ] Parallel judge workers
+* [ ] PostgreSQL production deployment
+* [ ] Strict API schema validation with Zod
+* [ ] Submission rate limiting
+* [ ] Server-authoritative contest timer
+* [ ] Advanced live leaderboard broadcasting
+* [ ] Automated scoring engine
+* [ ] Advanced anti-cheat mechanisms
+* [ ] Comprehensive automated tests
+* [ ] Production monitoring
+* [ ] Judge worker scaling
+
+---
+
+# 🤝 Contributing
+
+Contributions are welcome.
+
+### 1. Fork the repository
+
+### 2. Create a feature branch
 
 ```bash
 git checkout -b feature/your-feature
 ```
 
-3. Make your changes and test them locally.
-4. Commit your changes:
+### 3. Make your changes
+
+### 4. Test locally
+
+### 5. Commit
 
 ```bash
 git add .
 git commit -m "Add your feature"
 ```
 
-5. Push the branch and open a pull request.
+### 6. Push
 
-## License
+```bash
+git push origin feature/your-feature
+```
 
-This project currently does not declare a specific open-source license in the repository.
+### 7. Open a Pull Request
 
-## Author
+---
 
-**Harshil Bhatnagar**
+# 👨‍💻 Author
+
+## Harshil Bhatnagar
+
+BTech Computer Science Engineering
 
 GitHub: [@itsmebhatnagar](https://github.com/itsmebhatnagar)
+
+---
+
+# 📄 License
+
+This project currently does not declare a specific open-source license.
+
+---
+
+<div align="center">
+
+### ⚓ CODE CLASH
+
+**Outcode. Outlast. Claim the Treasure.**
+
+Built for competitive coders.
+Designed for the battlefield of code.
+
+</div>
