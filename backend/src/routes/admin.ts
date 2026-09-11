@@ -1,5 +1,5 @@
 import { Router } from 'express';
-import { PrismaClient } from '@prisma/client';
+import { prisma } from '../db';
 import { authenticate, requireAdmin } from '../middleware/authMiddleware';
 import { getAdminMetrics } from '../presence';
 import { Server } from 'socket.io';
@@ -7,8 +7,6 @@ import { recordAuditLog } from '../audit';
 import { asyncHandler } from '../middleware/asyncHandler';
 import { AppError } from '../middleware/errorMiddleware';
 import bcrypt from 'bcrypt';
-
-const prisma = new PrismaClient();
 
 export default function createAdminRouter(io: Server) {
   const router = Router();

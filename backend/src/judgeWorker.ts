@@ -3,9 +3,7 @@ import os from 'os';
 import path from 'path';
 import { spawn } from 'child_process';
 import { Server } from 'socket.io';
-import { PrismaClient } from '@prisma/client';
-
-const prisma = new PrismaClient();
+import { prisma } from './db';
 const queue: Array<{ id: string; io: Server }> = [];
 let running = false;
 const MAX_OUTPUT_BYTES = 256 * 1024;

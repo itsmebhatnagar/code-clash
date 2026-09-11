@@ -2,14 +2,13 @@ import { Router } from 'express';
 import { Server } from 'socket.io';
 import bcrypt from 'bcrypt';
 import jwt from 'jsonwebtoken';
-import { PrismaClient } from '@prisma/client';
+import { prisma } from '../db';
 import { authenticate } from '../middleware/authMiddleware';
 import { getAdminMetrics } from '../presence';
 import { recordAuditLog } from '../audit';
 import { asyncHandler } from '../middleware/asyncHandler';
 import { AppError } from '../middleware/errorMiddleware';
 
-const prisma = new PrismaClient();
 const JWT_SECRET = process.env.JWT_SECRET;
 if (!JWT_SECRET) throw new Error('JWT_SECRET is not configured');
 

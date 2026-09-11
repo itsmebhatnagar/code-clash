@@ -1,10 +1,8 @@
 import { Router } from 'express';
-import { PrismaClient } from '@prisma/client';
+import { prisma } from '../db';
 import { asyncHandler } from '../middleware/asyncHandler';
 
 const router = Router();
-const prisma = new PrismaClient();
-
 router.get('/', asyncHandler(async (_req, res) => {
   const evaluations = await prisma.evaluation.findMany({
     include: {

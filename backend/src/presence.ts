@@ -1,6 +1,4 @@
-import { PrismaClient } from '@prisma/client';
-
-const prisma = new PrismaClient();
+import { prisma } from './db';
 const participantConnections = new Map<string, number>();
 
 export function markParticipantConnected(participantId: string) {
@@ -14,18 +12,20 @@ export function markParticipantDisconnected(participantId: string) {
 }
 
 export async function getAdminMetrics() {
-  const [totalParticipants, registered, checkedIn, active, completed, activeRound, activeRoundSubmitters] = await Promise.all([
+  const [totalParticipants, registered, checkedIn, active, completed, disqualified, activeRound, activeRoundSubmitters, acceptedSolutions] = await Promise.all([
     prisma.user.count({ where: { role: 'PARTICIPANT' } }),
     prisma.user.count({ where: { role: 'PARTICIPANT', status: 'REGISTERED' } }),
     prisma.user.count({ where: { role: 'PARTICIPANT', status: 'CHECKED_IN' } }),
     prisma.user.count({ where: { role: 'PARTICIPANT', status: { in: ['REGISTERED', 'CHECKED_IN'] } } }),
     prisma.user.count({ where: { role: 'PARTICIPANT', status: 'COMPLETED' } }),
+    prisma.user.count({ where: { role: 'PARTICIPANT', status: 'DISQUALIFIED' } }),
     prisma.round.findFirst({ where: { status: 'ACTIVE' }, select: { id: true, name: true, startTime: true, duration: true } }),
     prisma.submission.findMany({
       where: { problem: { round: { status: 'ACTIVE' } } },
       select: { participantId: true },
       distinct: ['participantId']
-    })
+    }),
+    prisma.submission.count({ where: { status: 'ACCEPTED', problem: { round: { status: 'ACTIVE' } } } })
   ]);
 
   const connected = participantConnections.size;
@@ -35,9 +35,12 @@ export async function getAdminMetrics() {
     checkedIn,
     active,
     completed,
+    disqualified,
     connected,
     inContest: activeRound ? connected : 0,
+    currentRoundId: activeRound?.id || null,
     submitted: activeRound ? activeRoundSubmitters.length : 0,
+    acceptedSolutions,
     disconnected: Math.max(totalParticipants - connected, 0),
     currentRound: activeRound?.name || null,
     liveContestStatus: activeRound ? 'ACTIVE' : 'IDLE',

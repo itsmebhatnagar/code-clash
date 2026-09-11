@@ -1,10 +1,9 @@
 import { Server, Socket } from 'socket.io';
 import jwt from 'jsonwebtoken';
-import { PrismaClient } from '@prisma/client';
+import { prisma } from './db';
 import { getAdminMetrics, markParticipantConnected, markParticipantDisconnected } from './presence';
 import { recordAuditLog } from './audit';
 
-const prisma = new PrismaClient();
 const JWT_SECRET = process.env.JWT_SECRET;
 const roundTimers = new Map<string, NodeJS.Timeout>();
 

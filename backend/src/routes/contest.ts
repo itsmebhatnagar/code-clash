@@ -1,12 +1,10 @@
 import { Router } from 'express';
-import { PrismaClient } from '@prisma/client';
+import { prisma } from '../db';
 import { authenticate } from '../middleware/authMiddleware';
 import { asyncHandler } from '../middleware/asyncHandler';
 import { AppError } from '../middleware/errorMiddleware';
 import { Server } from 'socket.io';
 import { enqueueSubmission } from '../judgeWorker';
-
-const prisma = new PrismaClient();
 
 export default function createContestRouter(io: Server) {
   const router = Router();
@@ -27,6 +25,34 @@ export default function createContestRouter(io: Server) {
 
     if (!activeRound) throw new AppError(404, 'No active round currently running');
     res.json(activeRound);
+  }));
+
+  router.get('/dashboard', asyncHandler(async (req: any, res) => {
+    const activeRound = await prisma.round.findFirst({
+      where: { status: 'ACTIVE' },
+      include: {
+        problems: {
+          select: {
+            id: true, title: true, description: true, inputFormat: true,
+            outputFormat: true, constraints: true, timeLimit: true, memoryLimit: true
+          }
+        }
+      }
+    });
+
+    if (!activeRound) return res.json({ round: null });
+
+    const [attempted, solved, evaluation] = await Promise.all([
+      prisma.submission.findMany({ where: { participantId: req.user.id, problem: { roundId: activeRound.id } }, select: { problemId: true }, distinct: ['problemId'] }),
+      prisma.submission.findMany({ where: { participantId: req.user.id, problem: { roundId: activeRound.id }, status: 'ACCEPTED' }, select: { problemId: true }, distinct: ['problemId'] }),
+      prisma.evaluation.findUnique({ where: { participantId: req.user.id }, select: { finalScore: true } }),
+    ]);
+
+    const rankIndex = evaluation ? await prisma.evaluation.count({ where: { participant: { role: 'PARTICIPANT' }, finalScore: { gt: evaluation.finalScore } } }) : null;
+    res.json({
+      round: { id: activeRound.id, name: activeRound.name, duration: activeRound.duration, startTime: activeRound.startTime, problems: activeRound.problems },
+      stats: { solved: solved.length, attempted: attempted.length, totalProblems: activeRound.problems.length, score: evaluation?.finalScore || 0, rank: rankIndex === null ? null : rankIndex + 1 }
+    });
   }));
 
   router.post('/submit', asyncHandler(async (req: any, res) => {
