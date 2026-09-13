@@ -35,7 +35,7 @@ const io = new Server(httpServer, {
 });
 
 import createAuthRouter from './routes/auth';
-import createAdminRouter from './routes/admin';
+import createAdminRouter from './routes/admin/index';
 import createContestRouter from './routes/contest';
 import leaderboardRoutes from './routes/leaderboard';
 import { setupSockets } from './sockets';

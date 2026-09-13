@@ -93,23 +93,25 @@ export async function updateSessionActivity(participantId: string, socketId: str
 }
 
 export async function getSuspiciousParticipants() {
-  return prisma.participantSession.findMany({
+  const sessions = await prisma.participantSession.findMany({
     where: {
       suspiciousActivity: true,
       disconnectedAt: null
     },
-    include: {
-      participant: {
-        select: {
-          id: true,
-          name: true,
-          email: true,
-          status: true
-        }
-      }
-    },
     orderBy: { connectedAt: 'desc' }
   });
+
+  const participantIds = [...new Set(sessions.map((s) => s.participantId))];
+  const participants = await prisma.user.findMany({
+    where: { id: { in: participantIds } },
+    select: { id: true, name: true, email: true, status: true }
+  });
+  const participantMap = new Map(participants.map((p) => [p.id, p]));
+
+  return sessions.map((s) => ({
+    ...s,
+    participant: participantMap.get(s.participantId) || null
+  }));
 }
 
 export async function getParticipantSessions(participantId: string) {

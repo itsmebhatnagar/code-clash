@@ -92,10 +92,12 @@ describe('judgeSubmission – verdicts', async () => {
     const submission = await prisma.submission.create({
       data: {
         participantId: participant.id,
-        problemId:     rawProblem.id,
-        language:      options.language,
-        sourceCode:    options.sourceCode,
-        status:        'PENDING',
+        problemId: rawProblem.id,
+        language: options.language,
+        sourceCode: options.sourceCode,
+        status: 'PENDING',
+        ipAddress: '127.0.0.1',
+        deviceFingerprint: 'test-fingerprint',
       },
     });
 

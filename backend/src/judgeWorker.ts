@@ -79,7 +79,7 @@ async function prepareCommand(language: Language, sourceCode: string, workspace:
   }
   if (language === 'python') {
     await writeFile(path.join(workspace, 'main.py'), sourceCode);
-    return { command: sandboxImage ? 'python3' : (process.platform === 'win32' ? 'python' : 'python3'), args: ['main.py'] };
+    return { command: sandboxImage ? 'python3' : (process.platform === 'win32' ? 'python' : 'python3'), args: ['-u', 'main.py'] };
   }
   if (language === 'cpp') {
     await writeFile(path.join(workspace, 'main.cpp'), sourceCode);
@@ -108,7 +108,7 @@ function runProcess(command: string, args: string[], cwd: string, input: string,
         cwd: sandboxImage ? undefined : cwd, 
         shell: false, 
         windowsHide: true, 
-        env: sandboxImage ? { PATH: process.env.PATH || '' } : { PATH: process.env.PATH || '', ...(process.platform === 'win32' ? { SystemRoot: process.env.SystemRoot || 'C:\\Windows' } : {}) } 
+        env: sandboxImage ? { PATH: process.env.PATH || '' } : { ...process.env } 
     });
 
     let stdout = ''; let stderr = ''; let outputLimit = false; let settled = false;

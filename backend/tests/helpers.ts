@@ -10,6 +10,8 @@ import Module from 'module';
 process.env.DATABASE_URL = 'file:./test.db';
 process.env.JWT_SECRET    = 'test-jwt-secret';
 process.env.NODE_ENV      = 'test';
+delete process.env.JUDGE_DOCKER_IMAGE;
+process.env.JUDGE_REQUIRE_SANDBOX = 'false';
 
 export const prisma = new PrismaClient();
 
