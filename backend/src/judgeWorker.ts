@@ -27,8 +27,7 @@ export async function judgeSubmission(id: string) {
   }
   
   if (requireSandbox && !sandboxImage) {
-    // In production, we never fall back to host execution.
-    return finish(id, { status: 'RUNTIME_ERROR', totalCases: submission.problem.testCases.length, error: 'Sandbox is not configured' });
+    throw new Error('Sandbox is not configured');
   }
 
   const workspace = await mkdtemp(path.join(os.tmpdir(), 'code-clash-'));
@@ -58,7 +57,7 @@ export async function judgeSubmission(id: string) {
     }
     return finish(id, { status: passedCases === submission.problem.testCases.length ? 'ACCEPTED' : 'WRONG_ANSWER', executionTime: Date.now() - started, passedCases, totalCases: submission.problem.testCases.length });
   } catch (error) {
-    return finish(id, { status: 'RUNTIME_ERROR', totalCases: submission.problem.testCases.length, error: error instanceof Error ? error.message : 'Judge worker failed' });
+    throw error;
   } finally {
     await rm(workspace, { recursive: true, force: true });
   }

@@ -104,6 +104,42 @@ describe('POST /api/contest/submit', async () => {
     assert.ok(res.body.id, 'should return submission id');
     assert.equal(res.body.status, 'PENDING');
   });
+
+  test('rejects submission when round has ended (endTime passed)', async () => {
+    const round = await prisma.round.create({
+      data: { 
+        name: `Round-${Date.now()}`, 
+        duration: 60, 
+        status: 'ACTIVE',
+        startTime: new Date(Date.now() - 120_000),
+        endTime: new Date(Date.now() - 60_000)
+      },
+    });
+    const problem = await prisma.problem.create({
+      data: {
+        title:        'Hello World',
+        description:  'Print hello',
+        inputFormat:  'None',
+        outputFormat: '"hello"',
+        constraints:  'None',
+        difficulty:   'EASY',
+        timeLimit:    2000,
+        memoryLimit:  128,
+        roundId:      round.id,
+      },
+    });
+    const participant = await seedParticipant();
+    const app = await getApp();
+    const token = signToken({ id: participant.id, role: 'PARTICIPANT' });
+
+    const res = await request(app)
+      .post('/api/contest/submit')
+      .set('Authorization', `Bearer ${token}`)
+      .send({ problemId: problem.id, roundId: round.id, language: 'python', sourceCode: 'print("hello")' });
+
+    assert.equal(res.status, 409);
+    assert.match(res.body.error, /ended/i);
+  });
 });
 
 describe('GET /api/contest/dashboard', async () => {

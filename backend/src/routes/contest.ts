@@ -79,8 +79,9 @@ export default function createContestRouter(io: Server) {
     const deviceFingerprint = generateDeviceFingerprint(userAgent || '', ip || '');
 
     const submission = await prisma.$transaction(async (transaction) => {
-      const round = await transaction.round.findUnique({ where: { id: roundId }, select: { id: true, status: true } });
+      const round = await transaction.round.findUnique({ where: { id: roundId }, select: { id: true, status: true, endTime: true } });
       if (!round || round.status !== 'ACTIVE') throw new AppError(409, 'Round is not active');
+      if (round.endTime && new Date() >= round.endTime) throw new AppError(409, 'Round has ended');
 
       const problem = await transaction.problem.findUnique({ where: { id: problemId }, select: { roundId: true } });
       if (!problem || problem.roundId !== roundId) throw new AppError(400, 'Problem does not belong to the requested round');
@@ -98,7 +99,16 @@ export default function createContestRouter(io: Server) {
       });
     });
 
-    void submissionsQueue.add('judge', { submissionId: submission.id });
+    try {
+      await submissionsQueue.add('judge', { submissionId: submission.id });
+    } catch (queueError) {
+      await prisma.submission.update({ 
+        where: { id: submission.id }, 
+        data: { status: 'QUEUE_FAILED' } 
+      });
+      throw new AppError(503, 'Submission queue unavailable. Please try again.');
+    }
+
     res.status(202).json(submission);
   }));
 

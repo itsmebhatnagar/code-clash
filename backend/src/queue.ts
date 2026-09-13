@@ -6,7 +6,11 @@ export const SUBMISSIONS_QUEUE = 'submissions';
 export const submissionsQueue = new Queue(SUBMISSIONS_QUEUE, {
   connection,
   defaultJobOptions: {
-    attempts: 1,
+    attempts: 3,
+    backoff: {
+      type: 'exponential',
+      delay: 2000,
+    },
     removeOnComplete: true,
     removeOnFail: 1000,
   },
