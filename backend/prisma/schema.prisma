@@ -149,17 +149,21 @@ model WorkstationAssignmentHistory {
 }
 
 model ScoreAdjustment {
-  id                String   @id @default(uuid())
-  participantId     String
-  adminId           String
-  round1Score       Float
-  round2Score       Float
-  manualAdjustments Float
-  finalScore        Float
-  reason            String
-  reversedAt        DateTime?
-  reversedBy        String?
-  createdAt         DateTime @default(now())
+  id                        String    @id @default(uuid())
+  participantId             String
+  adminId                   String
+  round1Score               Float
+  round2Score               Float
+  manualAdjustments         Float
+  finalScore                Float
+  previousRound1Score       Float?
+  previousRound2Score       Float?
+  previousManualAdjustments Float?
+  previousFinalScore        Float?
+  reason                    String
+  reversedAt                DateTime?
+  reversedBy                String?
+  createdAt                 DateTime  @default(now())
 }
 
 model ContestSetting {

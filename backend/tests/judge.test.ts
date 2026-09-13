@@ -153,11 +153,12 @@ describe('judgeSubmission – verdicts', async () => {
     assert.equal(result.status, 'COMPILE_ERROR');
   });
 
-  test('COMPILE_ERROR – submission not found throws', async () => {
+  test('COMPILE_ERROR – submission not found throws InfraError', async () => {
     const { judgeSubmission } = await import('../src/judgeWorker');
     await assert.rejects(
       () => judgeSubmission('non-existent-id'),
-      /Submission not found/
+      // Now throws InfraError (transient: submission may not have been persisted yet)
+      /not found/i
     );
   });
 

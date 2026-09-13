@@ -128,7 +128,10 @@ export async function seedRoundWithProblem(status = 'ACTIVE') {
       outputFormat: '"hello"',
       constraints:  'None',
       difficulty:   'EASY',
-      timeLimit:    2000,
+      // 10 000 ms: generous limit for host (non-sandboxed) Python on Windows
+      // where interpreter startup can take 1–2 s on a cold run.
+      // Production containers run with a tighter 2 000 ms ceiling via Docker.
+      timeLimit:    10000,
       memoryLimit:  128,
       roundId:      round.id,
     },

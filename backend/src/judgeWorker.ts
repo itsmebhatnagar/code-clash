@@ -9,14 +9,34 @@ const sandboxImage = process.env.JUDGE_DOCKER_IMAGE;
 const isProduction = process.env.NODE_ENV === 'production';
 const requireSandbox = isProduction || process.env.JUDGE_REQUIRE_SANDBOX === 'true';
 
+/**
+ * InfraError – thrown for transient infrastructure failures (DB unreachable,
+ * Docker daemon down, workspace I/O error).  BullMQ will retry these jobs
+ * according to the queue's backoff policy.  Deterministic judging verdicts
+ * (WRONG_ANSWER, TLE, etc.) are *not* InfraErrors – they resolve via finish()
+ * and are never retried.
+ */
+export class InfraError extends Error {
+  constructor(message: string, public readonly cause?: unknown) {
+    super(message);
+    this.name = 'InfraError';
+  }
+}
+
 type Language = 'javascript' | 'python' | 'cpp' | 'java';
 
 export async function judgeSubmission(id: string) {
-  const submission = await prisma.submission.findUnique({
-    where: { id },
-    include: { problem: { include: { testCases: true } } }
-  });
-  if (!submission) throw new Error('Submission not found');
+  let submission;
+  try {
+    submission = await prisma.submission.findUnique({
+      where: { id },
+      include: { problem: { include: { testCases: true } } },
+    });
+  } catch (err) {
+    throw new InfraError(`DB lookup failed for submission ${id}`, err);
+  }
+
+  if (!submission) throw new InfraError(`Submission ${id} not found – may not have been persisted yet`);
 
   const language = normalizeLanguage(submission.language);
   if (!language) {
@@ -25,12 +45,18 @@ export async function judgeSubmission(id: string) {
   if (submission.problem.testCases.length === 0) {
     return finish(id, { status: 'COMPILE_ERROR', totalCases: 0, error: 'Problem has no test cases' });
   }
-  
+
   if (requireSandbox && !sandboxImage) {
-    throw new Error('Sandbox is not configured');
+    throw new InfraError('Sandbox is not configured (JUDGE_DOCKER_IMAGE is unset)');
   }
 
-  const workspace = await mkdtemp(path.join(os.tmpdir(), 'code-clash-'));
+  let workspace: string;
+  try {
+    workspace = await mkdtemp(path.join(os.tmpdir(), 'code-clash-'));
+  } catch (err) {
+    throw new InfraError('Failed to create workspace directory', err);
+  }
+
   try {
     const command = await prepareCommand(language, submission.sourceCode, workspace, submission.problem.memoryLimit);
     if (!command) {
@@ -56,8 +82,6 @@ export async function judgeSubmission(id: string) {
       passedCases += 1;
     }
     return finish(id, { status: passedCases === submission.problem.testCases.length ? 'ACCEPTED' : 'WRONG_ANSWER', executionTime: Date.now() - started, passedCases, totalCases: submission.problem.testCases.length });
-  } catch (error) {
-    throw error;
   } finally {
     await rm(workspace, { recursive: true, force: true });
   }
@@ -101,7 +125,20 @@ function runProcess(command: string, args: string[], cwd: string, input: string,
 
   return new Promise((resolve) => {
     const processArgs = sandboxImage
-      ? ['run', '--rm', '--network', 'none', '--read-only', '--tmpfs', '/tmp:rw,nosuid,size=64m', '--mount', `type=bind,src=${cwd},dst=/workspace`, '--workdir', '/workspace', '--memory', `${Math.max(16, memoryLimitMb)}m`, '--cpus', '1', '--pids-limit', '64', sandboxImage, command, ...args]
+      ? [
+          'run', '--rm',
+          '--network', 'none',
+          '--read-only',
+          '--tmpfs', '/tmp:rw,nosuid,size=64m',
+          '--mount', `type=bind,src=${cwd},dst=/workspace`,
+          '--workdir', '/workspace',
+          '--memory', `${Math.max(16, memoryLimitMb)}m`,
+          '--cpus', '1',
+          '--pids-limit', '64',
+          '--cap-drop', 'ALL',
+          '--security-opt', 'no-new-privileges',
+          sandboxImage, command, ...args,
+        ]
       : args;
       
     const child = spawn(sandboxImage ? 'docker' : command, processArgs, { 

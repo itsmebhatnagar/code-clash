@@ -138,6 +138,15 @@ export async function createParticipant(data: CreateParticipantInput, adminId: s
 }
 
 export async function updateParticipant(id: string, data: UpdateParticipantInput) {
+  const existing = await prisma.user.findUnique({
+    where: { id },
+    select: { role: true },
+  });
+
+  if (!existing || existing.role !== 'PARTICIPANT') {
+    throw new AppError(404, 'Participant not found');
+  }
+
   const participant = await prisma.user.update({
     where: { id },
     data: {
@@ -162,6 +171,15 @@ export async function updateParticipant(id: string, data: UpdateParticipantInput
 }
 
 export async function cancelParticipant(id: string, adminId: string) {
+  const existing = await prisma.user.findUnique({
+    where: { id },
+    select: { role: true },
+  });
+
+  if (!existing || existing.role !== 'PARTICIPANT') {
+    throw new AppError(404, 'Participant not found');
+  }
+
   await prisma.user.update({
     where: { id },
     data: { status: 'CANCELLED', lockedAt: new Date() },
