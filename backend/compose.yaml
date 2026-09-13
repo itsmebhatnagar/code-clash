@@ -1,0 +1,10 @@
+name: code-clash
+
+services:
+  judge-runtime:
+    build:
+      context: .
+      dockerfile: judge.Dockerfile
+    image: code-clash-judge:latest
+    command: ["sleep", "infinity"]
+    restart: unless-stopped

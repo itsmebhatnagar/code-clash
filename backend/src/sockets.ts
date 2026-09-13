@@ -18,9 +18,18 @@ export const setupSockets = (io: Server) => {
       return next(new Error('Authentication error: Token missing'));
     }
     try {
-      const decoded = jwt.verify(token, JWT_SECRET) as any;
-      socket.data.user = decoded;
-      next();
+      const decoded = jwt.verify(token, JWT_SECRET);
+      if (typeof decoded === 'string' || typeof decoded.id !== 'string') {
+        return next(new Error('Authentication error: Invalid token'));
+      }
+      void prisma.user.findUnique({ where: { id: decoded.id }, select: { id: true, role: true } }).then((user) => {
+        if (!user) {
+          next(new Error('Authentication error: User not found'));
+          return;
+        }
+        socket.data.user = user;
+        next();
+      }).catch(() => next(new Error('Authentication error: User lookup failed')));
     } catch (err) {
       return next(new Error('Authentication error: Invalid token'));
     }
@@ -118,7 +127,19 @@ export const setupSockets = (io: Server) => {
       }
     });
   });
+
+  void restoreActiveRoundTimers(io).catch((error) => {
+    console.error('Failed to restore active round timers:', error);
+  });
 };
+
+async function restoreActiveRoundTimers(io: Server) {
+  const activeRounds = await prisma.round.findMany({ where: { status: 'ACTIVE' }, select: { id: true, startTime: true, duration: true } });
+  for (const round of activeRounds) {
+    const elapsed = round.startTime ? Date.now() - round.startTime.getTime() : 0;
+    scheduleRoundEnd(io, round.id, Math.max(round.duration * 60_000 - elapsed, 1_000));
+  }
+}
 
 async function broadcastAdminMetrics(io: Server, socket?: Socket) {
   const metrics = await getAdminMetrics();
@@ -137,9 +158,12 @@ async function transitionRound(roundId: string, allowedStatuses: string | string
   if (!round) throw new Error('ROUND_NOT_FOUND');
   if (!allowed.includes(round.status)) throw new Error('ROUND_INVALID_TRANSITION');
 
+  const resumedStartTime = nextStatus === 'ACTIVE' && round.status === 'PAUSED' && round.pausedAt && round.startTime
+    ? new Date(round.startTime.getTime() + (Date.now() - round.pausedAt.getTime()))
+    : round.startTime;
   return prisma.round.update({
     where: { id: round.id },
-    data: { status: nextStatus, pausedAt: nextStatus === 'PAUSED' ? new Date() : null, endTime: nextStatus === 'ENDED' ? new Date() : round.endTime }
+    data: { status: nextStatus, startTime: resumedStartTime, pausedAt: nextStatus === 'PAUSED' ? new Date() : null, endTime: nextStatus === 'ENDED' ? new Date() : round.endTime }
   });
 }
 

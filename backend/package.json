@@ -4,9 +4,10 @@
   "description": "",
   "main": "index.js",
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1",
+    "test": "node --import tsx --test tests/judgeWorker.test.ts",
     "postinstall": "prisma skills sync || exit 0",
     "dev": "tsx watch src/index.ts",
+    "debug": "node --inspect=9229 --import tsx ./node_modules/tsx/dist/cli.mjs watch src/index.ts",
     "start": "node dist/index.js",
     "build": "tsc && prisma generate"
   },

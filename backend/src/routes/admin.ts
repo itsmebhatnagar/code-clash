@@ -22,7 +22,7 @@ export default function createAdminRouter(io: Server) {
     const status = req.query.status ? String(req.query.status) : undefined;
     const participants = await prisma.user.findMany({
       where: { role: 'PARTICIPANT', ...(status ? { status } : {}), ...(query ? { OR: [{ name: { contains: query } }, { email: { contains: query } }, { collegeId: { contains: query } }] } : {}) },
-      include: { workstation: true, evaluations: true },
+      select: { id: true, name: true, email: true, college: true, collegeId: true, phone: true, status: true, workstation: true, evaluations: true },
       orderBy: { createdAt: 'desc' }
     });
     res.json(participants);
@@ -30,7 +30,7 @@ export default function createAdminRouter(io: Server) {
 
   router.get('/participants/:id', asyncHandler(async (req, res) => {
     const participantId = req.params.id as string;
-    const participant = await prisma.user.findFirst({ where: { id: participantId, role: 'PARTICIPANT' }, include: { workstation: true, evaluations: true, submissions: { orderBy: { createdAt: 'desc' } } } });
+    const participant = await prisma.user.findFirst({ where: { id: participantId, role: 'PARTICIPANT' }, select: { id: true, name: true, email: true, college: true, collegeId: true, phone: true, status: true, collegeIdVerified: true, checkedInAt: true, disqualificationReason: true, workstation: true, evaluations: true, submissions: { orderBy: { createdAt: 'desc' } } } });
     if (!participant) throw new AppError(404, 'Participant not found');
     res.json(participant);
   }));
@@ -41,13 +41,13 @@ export default function createAdminRouter(io: Server) {
     const passwordHash = await bcrypt.hash(password, await bcrypt.genSalt(10));
     const participant = await prisma.user.create({ data: { name, email, passwordHash, college, collegeId, phone, role: 'PARTICIPANT' } });
     await recordAuditLog(req.user.id, 'PARTICIPANT_CHECKIN', `Participant ${participant.id} manually registered`);
-    res.status(201).json(participant);
+    res.status(201).json({ id: participant.id, name: participant.name, email: participant.email, college: participant.college, collegeId: participant.collegeId, phone: participant.phone, role: participant.role, status: participant.status });
   }));
 
   router.put('/participants/:id', asyncHandler(async (req: any, res) => {
     const { name, email, college, collegeId, phone } = req.body;
     const participant = await prisma.user.update({ where: { id: req.params.id }, data: { name, email, college, collegeId, phone } });
-    res.json(participant);
+    res.json({ id: participant.id, name: participant.name, email: participant.email, college: participant.college, collegeId: participant.collegeId, phone: participant.phone, role: participant.role, status: participant.status });
   }));
 
   router.delete('/participants/:id', asyncHandler(async (req: any, res) => {
@@ -196,7 +196,7 @@ export default function createAdminRouter(io: Server) {
   }));
 
   router.get('/submissions/:id', asyncHandler(async (req, res) => {
-    const submission = await prisma.submission.findUnique({ where: { id: req.params.id as string }, include: { participant: true, problem: { include: { round: true } } } });
+    const submission = await prisma.submission.findUnique({ where: { id: req.params.id as string }, include: { participant: { select: { id: true, name: true, email: true, college: true, collegeId: true, status: true } }, problem: { include: { round: true } } } });
     if (!submission) throw new AppError(404, 'Submission not found');
     res.json(submission);
   }));
@@ -279,7 +279,7 @@ export default function createAdminRouter(io: Server) {
   router.put('/users/:id/role', asyncHandler(async (req: any, res) => {
     const role = String(req.body.role || '');
     if (!['ADMIN', 'JUDGE', 'PARTICIPANT'].includes(role)) throw new AppError(400, 'Invalid role');
-    const user = await prisma.user.update({ where: { id: req.params.id as string }, data: { role } });
+    const user = await prisma.user.update({ where: { id: req.params.id as string }, data: { role }, select: { id: true, name: true, email: true, role: true, status: true } });
     res.json(user);
   }));
 

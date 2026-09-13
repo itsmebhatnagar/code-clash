@@ -5,10 +5,12 @@ import { asyncHandler } from '../middleware/asyncHandler';
 import { AppError } from '../middleware/errorMiddleware';
 import { Server } from 'socket.io';
 import { enqueueSubmission } from '../judgeWorker';
+import { rateLimit } from '../middleware/rateLimit';
 
 export default function createContestRouter(io: Server) {
   const router = Router();
   router.use(authenticate);
+  router.use('/submit', rateLimit(60_000, 30));
 
   router.get('/assignment', asyncHandler(async (_req, res) => {
     const activeRound = await prisma.round.findFirst({
@@ -62,7 +64,7 @@ export default function createContestRouter(io: Server) {
     if (!problemId || !roundId || !language || !sourceCode) {
       throw new AppError(400, 'Missing submission fields');
     }
-    if (typeof sourceCode !== 'string' || sourceCode.length > 100_000) {
+    if (typeof sourceCode !== 'string' || sourceCode.length > 100_000 || language.length > 32) {
       throw new AppError(400, 'Source code must be under 100 KB');
     }
 
