@@ -9,13 +9,6 @@ const sandboxImage = process.env.JUDGE_DOCKER_IMAGE;
 const isProduction = process.env.NODE_ENV === 'production';
 const requireSandbox = isProduction || process.env.JUDGE_REQUIRE_SANDBOX === 'true';
 
-/**
- * InfraError – thrown for transient infrastructure failures (DB unreachable,
- * Docker daemon down, workspace I/O error).  BullMQ will retry these jobs
- * according to the queue's backoff policy.  Deterministic judging verdicts
- * (WRONG_ANSWER, TLE, etc.) are *not* InfraErrors – they resolve via finish()
- * and are never retried.
- */
 export class InfraError extends Error {
   constructor(message: string, public readonly cause?: unknown) {
     super(message);

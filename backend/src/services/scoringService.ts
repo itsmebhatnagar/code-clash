@@ -18,6 +18,31 @@ export interface AdjustScoreInput {
   reason?: string;
 }
 
+const ROUND_SCORE_MIN   = 0;
+const ROUND_SCORE_MAX   = 500;
+const MANUAL_ADJ_MIN    = -500;
+const MANUAL_ADJ_MAX    = 500;
+const QUALITY_MIN       = 0;
+const QUALITY_MAX       = 100;
+
+function assertRoundScore(value: number, label: string) {
+  if (!Number.isFinite(value) || value < ROUND_SCORE_MIN || value > ROUND_SCORE_MAX) {
+    throw new AppError(400, `${label} must be between ${ROUND_SCORE_MIN} and ${ROUND_SCORE_MAX}`);
+  }
+}
+
+function assertManualAdjustment(value: number) {
+  if (!Number.isFinite(value) || value < MANUAL_ADJ_MIN || value > MANUAL_ADJ_MAX) {
+    throw new AppError(400, `manualAdjustments must be between ${MANUAL_ADJ_MIN} and ${MANUAL_ADJ_MAX}`);
+  }
+}
+
+function assertQualityScore(value: number, label: string) {
+  if (!Number.isFinite(value) || value < QUALITY_MIN || value > QUALITY_MAX) {
+    throw new AppError(400, `${label} must be between ${QUALITY_MIN} and ${QUALITY_MAX}`);
+  }
+}
+
 export async function listEvaluations() {
   return prisma.evaluation.findMany({
     include: {
@@ -37,11 +62,13 @@ export async function lockEvaluation(id: string, adminId: string) {
   return evaluation;
 }
 
-export async function unlockEvaluation(id: string) {
-  return prisma.evaluation.update({
+export async function unlockEvaluation(id: string, adminId: string) {
+  const evaluation = await prisma.evaluation.update({
     where: { id },
     data: { lockedAt: null, lockedBy: null },
   });
+  await recordAuditLog(adminId, 'SCORE_ADJUSTMENT', `Evaluation ${evaluation.id} unlocked`);
+  return evaluation;
 }
 
 export async function updateJudgeEvaluation(
@@ -52,9 +79,8 @@ export async function updateJudgeEvaluation(
   const quality = Number(input.codeQuality ?? 0);
   const clarity = Number(input.logicClarity ?? 0);
 
-  if (![quality, clarity].every(Number.isFinite)) {
-    throw new AppError(400, 'Evaluation scores must be valid numbers');
-  }
+  assertQualityScore(quality, 'codeQuality');
+  assertQualityScore(clarity, 'logicClarity');
 
   const existing = await prisma.evaluation.findUnique({ where: { participantId } });
   if (existing?.lockedAt) {
@@ -99,67 +125,68 @@ export async function adjustScore(
     throw new AppError(409, 'Evaluation is locked');
   }
 
-  const normalizedRound1Score = input.round1Score !== undefined
+  const r1 = input.round1Score !== undefined
     ? Number(input.round1Score)
     : (existingEvaluation?.round1Score ?? 0);
-  const normalizedRound2Score = input.round2Score !== undefined
+  const r2 = input.round2Score !== undefined
     ? Number(input.round2Score)
     : (existingEvaluation?.round2Score ?? 0);
-  const normalizedManualAdjustments = input.manualAdjustments !== undefined
+  const manual = input.manualAdjustments !== undefined
     ? Number(input.manualAdjustments)
     : (existingEvaluation?.manualAdjustments ?? 0);
 
-  const scores = [normalizedRound1Score, normalizedRound2Score, normalizedManualAdjustments];
-  if (scores.some((score) => !Number.isFinite(score))) {
-    throw new AppError(400, 'Scores must be valid numbers');
-  }
+  assertRoundScore(r1, 'round1Score');
+  assertRoundScore(r2, 'round2Score');
+  assertManualAdjustment(manual);
 
-  const finalScore = normalizedRound1Score + normalizedRound2Score + normalizedManualAdjustments;
+  const finalScore = r1 + r2 + manual;
 
-  // Snapshot previous state so reversal can restore it exactly.
-  const prevRound1Score        = existingEvaluation?.round1Score ?? 0;
-  const prevRound2Score        = existingEvaluation?.round2Score ?? 0;
-  const prevManualAdjustments  = existingEvaluation?.manualAdjustments ?? 0;
-  const prevFinalScore         = existingEvaluation?.finalScore
-    ?? (prevRound1Score + prevRound2Score + prevManualAdjustments);
+  const prevR1     = existingEvaluation?.round1Score        ?? 0;
+  const prevR2     = existingEvaluation?.round2Score        ?? 0;
+  const prevManual = existingEvaluation?.manualAdjustments  ?? 0;
+  const prevFinal  = existingEvaluation?.finalScore
+    ?? (prevR1 + prevR2 + prevManual);
 
-  const evaluation = await prisma.evaluation.upsert({
-    where: { participantId },
-    update: {
-      round1Score: normalizedRound1Score,
-      round2Score: normalizedRound2Score,
-      manualAdjustments: normalizedManualAdjustments,
-      judgeComments: input.judgeComments,
-      finalScore,
-    },
-    create: {
-      participantId,
-      round1Score: normalizedRound1Score,
-      round2Score: normalizedRound2Score,
-      manualAdjustments: normalizedManualAdjustments,
-      judgeComments: input.judgeComments,
-      finalScore,
-    },
+  const evaluation = await prisma.$transaction(async (tx) => {
+    const eval_ = await tx.evaluation.upsert({
+      where: { participantId },
+      update: {
+        round1Score: r1,
+        round2Score: r2,
+        manualAdjustments: manual,
+        judgeComments: input.judgeComments,
+        finalScore,
+      },
+      create: {
+        participantId,
+        round1Score: r1,
+        round2Score: r2,
+        manualAdjustments: manual,
+        judgeComments: input.judgeComments,
+        finalScore,
+      },
+    });
+
+    await tx.scoreAdjustment.create({
+      data: {
+        participantId,
+        adminId,
+        round1Score:               r1,
+        round2Score:               r2,
+        manualAdjustments:         manual,
+        finalScore,
+        previousRound1Score:       prevR1,
+        previousRound2Score:       prevR2,
+        previousManualAdjustments: prevManual,
+        previousFinalScore:        prevFinal,
+        reason: String(input.reason || 'Manual score adjustment'),
+      },
+    });
+
+    return eval_;
   });
 
   await syncLeaderboardScore(participantId, finalScore);
-
-  await prisma.scoreAdjustment.create({
-    data: {
-      participantId,
-      adminId,
-      round1Score:              normalizedRound1Score,
-      round2Score:              normalizedRound2Score,
-      manualAdjustments:        normalizedManualAdjustments,
-      finalScore,
-      previousRound1Score:      prevRound1Score,
-      previousRound2Score:      prevRound2Score,
-      previousManualAdjustments: prevManualAdjustments,
-      previousFinalScore:       prevFinalScore,
-      reason: String(input.reason || 'Manual score adjustment'),
-    },
-  });
-
   await recordAuditLog(adminId, 'SCORE_ADJUSTMENT', `Adjusted score for participant ${participantId}`);
   return evaluation;
 }
@@ -188,69 +215,66 @@ export async function reverseScoreAdjustment(adjustmentId: string, adminId: stri
     throw new AppError(409, 'Evaluation is locked');
   }
 
-  const reversed = await prisma.scoreAdjustment.update({
-    where: { id: adjustment.id },
-    data: { reversedAt: new Date(), reversedBy: adminId },
-  });
+  const { evaluation, reversed, newFinalScore } = await prisma.$transaction(async (tx) => {
+    const reversed = await tx.scoreAdjustment.update({
+      where: { id: adjustment.id },
+      data: { reversedAt: new Date(), reversedBy: adminId },
+    });
 
-  // Determine the correct score state after removing this adjustment.
-  const remainingActiveAdjustments: ScoreAdjustment[] = await prisma.scoreAdjustment.findMany({
-    where: { participantId: adjustment.participantId, reversedAt: null },
-    orderBy: { createdAt: 'desc' },
-  });
+    const remaining: ScoreAdjustment[] = await tx.scoreAdjustment.findMany({
+      where: { participantId: adjustment.participantId, reversedAt: null },
+      orderBy: { createdAt: 'desc' },
+    });
 
-  let newRound1Score: number;
-  let newRound2Score: number;
-  let newManualAdjustments: number;
-  let newFinalScore: number;
+    let newR1: number;
+    let newR2: number;
+    let newManual: number;
+    let newFinal: number;
 
-  if (remainingActiveAdjustments.length > 0) {
-    const latestRemaining = remainingActiveAdjustments[0];
-    if (adjustment.createdAt >= latestRemaining.createdAt) {
-      // Reversed the most-recent adjustment — restore to the next most-recent.
-      newRound1Score       = latestRemaining.round1Score;
-      newRound2Score       = latestRemaining.round2Score;
-      newManualAdjustments = latestRemaining.manualAdjustments;
-      newFinalScore        = latestRemaining.finalScore;
+    if (remaining.length > 0) {
+      const latest = remaining[0];
+      if (adjustment.createdAt >= latest.createdAt) {
+        newR1     = latest.round1Score;
+        newR2     = latest.round2Score;
+        newManual = latest.manualAdjustments;
+        newFinal  = latest.finalScore;
+      } else {
+        const deltaR1     = adjustment.round1Score       - (adjustment.previousRound1Score       ?? 0);
+        const deltaR2     = adjustment.round2Score       - (adjustment.previousRound2Score       ?? 0);
+        const deltaManual = adjustment.manualAdjustments - (adjustment.previousManualAdjustments ?? 0);
+
+        newR1     = (existingEvaluation?.round1Score      ?? 0) - deltaR1;
+        newR2     = (existingEvaluation?.round2Score      ?? 0) - deltaR2;
+        newManual = (existingEvaluation?.manualAdjustments ?? 0) - deltaManual;
+        newFinal  = newR1 + newR2 + newManual;
+      }
+    } else if (adjustment.previousRound1Score !== null && adjustment.previousRound1Score !== undefined) {
+      newR1     = adjustment.previousRound1Score;
+      newR2     = adjustment.previousRound2Score      ?? 0;
+      newManual = adjustment.previousManualAdjustments ?? 0;
+      newFinal  = adjustment.previousFinalScore
+        ?? (newR1 + newR2 + newManual);
     } else {
-      // Reversing an older adjustment while newer ones are still active:
-      // subtract the delta this adjustment introduced.
-      const deltaR1     = adjustment.round1Score      - (adjustment.previousRound1Score      ?? 0);
-      const deltaR2     = adjustment.round2Score      - (adjustment.previousRound2Score      ?? 0);
-      const deltaManual = adjustment.manualAdjustments - (adjustment.previousManualAdjustments ?? 0);
-
-      newRound1Score       = (existingEvaluation?.round1Score      ?? 0) - deltaR1;
-      newRound2Score       = (existingEvaluation?.round2Score      ?? 0) - deltaR2;
-      newManualAdjustments = (existingEvaluation?.manualAdjustments ?? 0) - deltaManual;
-      newFinalScore        = newRound1Score + newRound2Score + newManualAdjustments;
+      newR1     = existingEvaluation?.round1Score  ?? 0;
+      newR2     = existingEvaluation?.round2Score  ?? 0;
+      newManual = 0;
+      newFinal  = newR1 + newR2;
     }
-  } else if (adjustment.previousRound1Score !== null && adjustment.previousRound1Score !== undefined) {
-    // No remaining adjustments — restore the snapshot taken before this one.
-    newRound1Score       = adjustment.previousRound1Score;
-    newRound2Score       = adjustment.previousRound2Score      ?? 0;
-    newManualAdjustments = adjustment.previousManualAdjustments ?? 0;
-    newFinalScore        = adjustment.previousFinalScore
-      ?? (newRound1Score + newRound2Score + newManualAdjustments);
-  } else {
-    // Legacy record without a snapshot — fall back to zeroing manual adjustments.
-    newRound1Score       = existingEvaluation?.round1Score  ?? 0;
-    newRound2Score       = existingEvaluation?.round2Score  ?? 0;
-    newManualAdjustments = 0;
-    newFinalScore        = newRound1Score + newRound2Score;
-  }
 
-  const evaluation = await prisma.evaluation.update({
-    where: { participantId: adjustment.participantId },
-    data: {
-      round1Score:       newRound1Score,
-      round2Score:       newRound2Score,
-      manualAdjustments: newManualAdjustments,
-      finalScore:        newFinalScore,
-    },
+    const evaluation = await tx.evaluation.update({
+      where: { participantId: adjustment.participantId },
+      data: {
+        round1Score:       newR1,
+        round2Score:       newR2,
+        manualAdjustments: newManual,
+        finalScore:        newFinal,
+      },
+    });
+
+    return { evaluation, reversed, newFinalScore: newFinal };
   });
 
   await syncLeaderboardScore(adjustment.participantId, newFinalScore);
-
   await recordAuditLog(
     adminId,
     'SCORE_ADJUSTMENT',

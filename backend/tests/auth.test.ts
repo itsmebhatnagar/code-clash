@@ -1,7 +1,3 @@
-/**
- * tests/auth.test.ts
- * Authentication – invalid JWT, role escalation, expired token
- */
 import test, { before, after, beforeEach, describe } from 'node:test';
 import assert from 'node:assert/strict';
 import request from 'supertest';

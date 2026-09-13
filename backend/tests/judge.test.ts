@@ -1,19 +1,7 @@
-/**
- * tests/judge.test.ts
- * Judge worker – unit tests for all verdicts using normalizeLanguage and normalizeOutput
- * plus integration-style tests for the judgeSubmission logic via a mocked Docker environment.
- *
- * IMPORTANT: helpers must be imported FIRST so DATABASE_URL is set before
- * src/judgeWorker (and therefore src/db) is loaded.
- */
-// 1. helpers sets process.env.DATABASE_URL before any src/* module is required
 import { cleanDb, prisma, seedParticipant, seedRoundWithProblem } from './helpers';
-// 2. judgeWorker loads src/db.ts which reads DATABASE_URL — must be after helpers
 import { normalizeLanguage, normalizeOutput } from '../src/judgeWorker';
 import test, { before, after, describe } from 'node:test';
 import assert from 'node:assert/strict';
-
-// ── Pure-function unit tests ────────────────────────────────────────────────────
 
 describe('normalizeLanguage', () => {
   test('recognises javascript aliases', () => {
@@ -63,8 +51,6 @@ describe('normalizeOutput', () => {
     assert.equal(normalizeOutput('   '), '');
   });
 });
-
-// ── judgeSubmission integration tests (no real Docker) ─────────────────────────
 
 describe('judgeSubmission – verdicts', async () => {
   before(async () => { await cleanDb(); });

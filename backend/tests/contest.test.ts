@@ -1,7 +1,3 @@
-/**
- * tests/contest.test.ts
- * Contest routes – submission guards, round checks, code size limits
- */
 import test, { before, after, describe } from 'node:test';
 import assert from 'node:assert/strict';
 import request from 'supertest';

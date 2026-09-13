@@ -1,7 +1,3 @@
-/**
- * tests/admin.test.ts
- * Admin routes – check-in, disqualification, workstation assignment, score changes
- */
 import test, { before, after, describe } from 'node:test';
 import assert from 'node:assert/strict';
 import request from 'supertest';

@@ -2,8 +2,6 @@ import { prisma } from '../db';
 import { recordAuditLog } from '../audit';
 import { AppError } from '../middleware/errorMiddleware';
 
-// ── Workstations ─────────────────────────────────────────────────────────────
-
 export async function listWorkstations() {
   return prisma.workstation.findMany({
     include: {
@@ -84,8 +82,6 @@ export async function getWorkstationHistory(workstationId: string) {
     orderBy: { createdAt: 'desc' },
   });
 }
-
-// ── Problems ─────────────────────────────────────────────────────────────────
 
 export interface CreateProblemInput {
   title: string;
@@ -223,8 +219,6 @@ export async function addExample(
     },
   });
 }
-
-// ── Rounds ───────────────────────────────────────────────────────────────────
 
 export interface CreateRoundInput {
   name: string;

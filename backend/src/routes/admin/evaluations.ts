@@ -47,7 +47,7 @@ export default function createEvaluationRoutes() {
   }));
 
   router.post('/:id/unlock', asyncHandler(async (req: any, res) => {
-    res.json(await unlockEvaluation(req.params.id as string));
+    res.json(await unlockEvaluation(req.params.id as string, req.user.id));
   }));
 
   router.put('/:participantId', asyncHandler(async (req: any, res) => {
@@ -60,7 +60,6 @@ export default function createEvaluationRoutes() {
     res.json(evaluation);
   }));
 
-  // Mount score routes also as /scores under /evaluations for backwards compatibility
   router.use('/scores', createScoreRoutes());
 
   return router;
