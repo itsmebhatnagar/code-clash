@@ -4,11 +4,14 @@
   "description": "",
   "main": "index.js",
   "scripts": {
-    "test": "node --import tsx --test tests/judgeWorker.test.ts",
-    "postinstall": "prisma skills sync || exit 0",
+    "test": "cross-env DATABASE_URL=file:./test.db JUDGE_REQUIRE_SANDBOX=false node --import tsx --test-concurrency=1 --test tests/*.test.ts",
+    "test:setup": "cross-env DATABASE_URL=file:./test.db npx prisma db push --skip-generate",
+    "postinstall": "prisma generate || exit 0",
     "dev": "tsx watch src/index.ts",
+    "dev:worker": "tsx watch src/worker.ts",
     "debug": "node --inspect=9229 --import tsx ./node_modules/tsx/dist/cli.mjs watch src/index.ts",
     "start": "node dist/index.js",
+    "worker": "node dist/worker.js",
     "build": "tsc && prisma generate"
   },
   "keywords": [],
@@ -18,9 +21,11 @@
   "dependencies": {
     "@prisma/client": "^5.22.0",
     "bcrypt": "^6.0.0",
+    "bullmq": "^6.3.4",
     "cors": "^2.8.6",
     "dotenv": "^17.4.2",
     "express": "^5.2.1",
+    "ioredis": "^6.0.0",
     "jsonwebtoken": "^9.0.3",
     "socket.io": "^4.8.3"
   },
@@ -31,7 +36,10 @@
     "@types/jsonwebtoken": "^9.0.10",
     "@types/node": "^26.5.0",
     "@types/socket.io": "^3.0.1",
+    "@types/supertest": "^7.2.1",
+    "cross-env": "^10.1.0",
     "prisma": "^5.22.0",
+    "supertest": "^7.2.2",
     "tsx": "^4.23.13",
     "typescript": "^5.9.3"
   }

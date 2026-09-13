@@ -50,7 +50,6 @@ const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD;
 app.use(cors(corsOptions));
 app.use(express.json({ limit: '256kb' }));
 
-// Routes
 app.use('/api/auth', rateLimit(15 * 60_000, 100), createAuthRouter(io));
 app.use('/api/admin', createAdminRouter(io));
 app.use('/api/contest', createContestRouter(io));
@@ -60,7 +59,18 @@ app.get('/api/health', (req, res) => {
   res.json({ status: 'ok', message: 'Code Clash Backend is running' });
 });
 
-// Real-time socket connections for Judge-Authoritative Clock
+import { submissionsQueueEvents } from './queue';
+
+submissionsQueueEvents.on('completed', async ({ jobId, returnvalue }) => {
+  if (returnvalue && typeof returnvalue === 'object' && 'participantId' in returnvalue) {
+    io.to(`PARTICIPANT:${returnvalue.participantId}`).emit('SUBMISSION_RESULT', returnvalue);
+  }
+});
+
+submissionsQueueEvents.on('failed', async ({ jobId, failedReason }) => {
+  console.error(`Job ${jobId} failed with reason: ${failedReason}`);
+});
+
 setupSockets(io);
 
 app.use(errorMiddleware);
@@ -90,6 +100,17 @@ async function ensureAdminAccount() {
 
 async function startServer() {
   await ensureAdminAccount();
+
+  try {
+    const { syncLeaderboardScore } = await import('./redis');
+    const evaluations = await prisma.evaluation.findMany({ select: { participantId: true, finalScore: true } });
+    for (const ev of evaluations) {
+      await syncLeaderboardScore(ev.participantId, ev.finalScore);
+    }
+    console.log(`Synced ${evaluations.length} evaluation scores to Redis leaderboard`);
+  } catch (err) {
+    console.error('Failed to sync leaderboard to Redis on startup', err);
+  }
 
   httpServer.listen(PORT, () => {
     console.log(`Code Clash Backend is running on port ${PORT}`);

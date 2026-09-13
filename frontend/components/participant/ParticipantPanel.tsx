@@ -4,6 +4,7 @@ import { LogOut, ShieldCheck } from 'lucide-react'
 import { useCallback, useState } from 'react'
 import { useContestSocket } from '../../hooks/useContestSocket'
 import { useParticipantDashboard } from '../../hooks/useParticipantDashboard'
+import { useActivityPing } from '../../hooks/useActivityPing'
 import { submitCode } from '../../lib/api'
 import type { SubmissionResult, User } from '../../lib/types'
 import { CodeEditor } from './CodeEditor'
@@ -19,6 +20,7 @@ export function ParticipantPanel({ user, token, onLogout }: { user: User; token:
   const [isSubmitting, setIsSubmitting] = useState(false)
   const onResult = useCallback((data: SubmissionResult) => { setResult(data); setMessage(''); refresh() }, [refresh])
   useContestSocket(token, 'SUBMISSION_RESULT', onResult)
+  useActivityPing(token)
 
   async function handleSubmit() {
     if (isSubmitting) return

@@ -2,58 +2,40 @@ import { mkdtemp, rm, writeFile } from 'fs/promises';
 import os from 'os';
 import path from 'path';
 import { spawn } from 'child_process';
-import { Server } from 'socket.io';
 import { prisma } from './db';
-const queue: Array<{ id: string; io: Server }> = [];
-let running = false;
+
 const MAX_OUTPUT_BYTES = 256 * 1024;
 const sandboxImage = process.env.JUDGE_DOCKER_IMAGE;
-const requireSandbox = process.env.NODE_ENV === 'production' || process.env.JUDGE_REQUIRE_SANDBOX === 'true';
+const isProduction = process.env.NODE_ENV === 'production';
+const requireSandbox = isProduction || process.env.JUDGE_REQUIRE_SANDBOX === 'true';
 
 type Language = 'javascript' | 'python' | 'cpp' | 'java';
 
-export function enqueueSubmission(id: string, io: Server) {
-  queue.push({ id, io });
-  void processQueue();
-}
-
-async function processQueue() {
-  if (running) return;
-  running = true;
-  while (queue.length > 0) {
-    const item = queue.shift();
-    if (item) await judgeSubmission(item.id, item.io);
-  }
-  running = false;
-}
-
-async function judgeSubmission(id: string, io: Server) {
+export async function judgeSubmission(id: string) {
   const submission = await prisma.submission.findUnique({
     where: { id },
     include: { problem: { include: { testCases: true } } }
   });
-  if (!submission) return;
+  if (!submission) throw new Error('Submission not found');
 
   const language = normalizeLanguage(submission.language);
   if (!language) {
-    await finish(id, io, { status: 'COMPILE_ERROR', totalCases: submission.problem.testCases.length, error: 'Unsupported language' });
-    return;
+    return finish(id, { status: 'COMPILE_ERROR', totalCases: submission.problem.testCases.length, error: 'Unsupported language' });
   }
   if (submission.problem.testCases.length === 0) {
-    await finish(id, io, { status: 'COMPILE_ERROR', totalCases: 0, error: 'Problem has no test cases' });
-    return;
+    return finish(id, { status: 'COMPILE_ERROR', totalCases: 0, error: 'Problem has no test cases' });
   }
+  
   if (requireSandbox && !sandboxImage) {
-    await finish(id, io, { status: 'RUNTIME_ERROR', totalCases: submission.problem.testCases.length, error: 'Sandbox is not configured' });
-    return;
+    // In production, we never fall back to host execution.
+    return finish(id, { status: 'RUNTIME_ERROR', totalCases: submission.problem.testCases.length, error: 'Sandbox is not configured' });
   }
 
   const workspace = await mkdtemp(path.join(os.tmpdir(), 'code-clash-'));
   try {
     const command = await prepareCommand(language, submission.sourceCode, workspace, submission.problem.memoryLimit);
     if (!command) {
-      await finish(id, io, { status: 'COMPILE_ERROR', totalCases: submission.problem.testCases.length, error: 'Compiler or runtime is not installed' });
-      return;
+      return finish(id, { status: 'COMPILE_ERROR', totalCases: submission.problem.testCases.length, error: 'Compiler or runtime is not installed' });
     }
 
     const started = Date.now();
@@ -61,26 +43,22 @@ async function judgeSubmission(id: string, io: Server) {
     for (const testCase of submission.problem.testCases) {
       const result = await runProcess(command.command, command.args, workspace, testCase.input, submission.problem.timeLimit, submission.problem.memoryLimit);
       if (result.timeout) {
-        await finish(id, io, { status: 'TIME_LIMIT_EXCEEDED', executionTime: Date.now() - started, passedCases, totalCases: submission.problem.testCases.length, error: 'Time limit exceeded' });
-        return;
+        return finish(id, { status: 'TIME_LIMIT_EXCEEDED', executionTime: Date.now() - started, passedCases, totalCases: submission.problem.testCases.length, error: 'Time limit exceeded' });
       }
       if (result.outputLimit) {
-        await finish(id, io, { status: 'OUTPUT_LIMIT_EXCEEDED', executionTime: Date.now() - started, passedCases, totalCases: submission.problem.testCases.length, error: 'Output limit exceeded' });
-        return;
+        return finish(id, { status: 'OUTPUT_LIMIT_EXCEEDED', executionTime: Date.now() - started, passedCases, totalCases: submission.problem.testCases.length, error: 'Output limit exceeded' });
       }
       if (result.exitCode !== 0) {
-        await finish(id, io, { status: 'RUNTIME_ERROR', executionTime: Date.now() - started, passedCases, totalCases: submission.problem.testCases.length, error: result.stderr || 'Process exited with an error' });
-        return;
+        return finish(id, { status: 'RUNTIME_ERROR', executionTime: Date.now() - started, passedCases, totalCases: submission.problem.testCases.length, error: result.stderr || 'Process exited with an error' });
       }
       if (normalizeOutput(result.stdout) !== normalizeOutput(testCase.output)) {
-        await finish(id, io, { status: 'WRONG_ANSWER', executionTime: Date.now() - started, passedCases, totalCases: submission.problem.testCases.length, error: 'Output did not match expected result' });
-        return;
+        return finish(id, { status: 'WRONG_ANSWER', executionTime: Date.now() - started, passedCases, totalCases: submission.problem.testCases.length, error: 'Output did not match expected result' });
       }
       passedCases += 1;
     }
-    await finish(id, io, { status: passedCases === submission.problem.testCases.length ? 'ACCEPTED' : 'WRONG_ANSWER', executionTime: Date.now() - started, passedCases, totalCases: submission.problem.testCases.length });
+    return finish(id, { status: passedCases === submission.problem.testCases.length ? 'ACCEPTED' : 'WRONG_ANSWER', executionTime: Date.now() - started, passedCases, totalCases: submission.problem.testCases.length });
   } catch (error) {
-    await finish(id, io, { status: 'RUNTIME_ERROR', totalCases: submission.problem.testCases.length, error: error instanceof Error ? error.message : 'Judge worker failed' });
+    return finish(id, { status: 'RUNTIME_ERROR', totalCases: submission.problem.testCases.length, error: error instanceof Error ? error.message : 'Judge worker failed' });
   } finally {
     await rm(workspace, { recursive: true, force: true });
   }
@@ -117,11 +95,23 @@ async function prepareCommand(language: Language, sourceCode: string, workspace:
 }
 
 function runProcess(command: string, args: string[], cwd: string, input: string, timeoutMs: number, memoryLimitMb = 128): Promise<{ exitCode: number | null; stdout: string; stderr: string; timeout: boolean; outputLimit: boolean }> {
+  // Never fall back to host execution in production!
+  if (requireSandbox && !sandboxImage) {
+      throw new Error('Sandbox is strictly required, execution blocked.');
+  }
+
   return new Promise((resolve) => {
     const processArgs = sandboxImage
       ? ['run', '--rm', '--network', 'none', '--read-only', '--tmpfs', '/tmp:rw,nosuid,size=64m', '--mount', `type=bind,src=${cwd},dst=/workspace`, '--workdir', '/workspace', '--memory', `${Math.max(16, memoryLimitMb)}m`, '--cpus', '1', '--pids-limit', '64', sandboxImage, command, ...args]
       : args;
-    const child = spawn(sandboxImage ? 'docker' : command, processArgs, { cwd: sandboxImage ? undefined : cwd, shell: false, windowsHide: true, env: sandboxImage ? { PATH: process.env.PATH || '' } : { PATH: process.env.PATH || '', ...(process.platform === 'win32' ? { SystemRoot: process.env.SystemRoot || 'C:\\Windows' } : {}) } });
+      
+    const child = spawn(sandboxImage ? 'docker' : command, processArgs, { 
+        cwd: sandboxImage ? undefined : cwd, 
+        shell: false, 
+        windowsHide: true, 
+        env: sandboxImage ? { PATH: process.env.PATH || '' } : { PATH: process.env.PATH || '', ...(process.platform === 'win32' ? { SystemRoot: process.env.SystemRoot || 'C:\\Windows' } : {}) } 
+    });
+
     let stdout = ''; let stderr = ''; let outputLimit = false; let settled = false;
     const timer = setTimeout(() => { child.kill('SIGKILL'); resolveOnce({ exitCode: null, stdout, stderr, timeout: true, outputLimit }); }, timeoutMs);
     const append = (target: 'stdout' | 'stderr', chunk: Buffer) => {
@@ -139,7 +129,10 @@ function runProcess(command: string, args: string[], cwd: string, input: string,
 
 export function normalizeOutput(value: string) { return value.replace(/\r\n/g, '\n').trim().split('\n').map((line) => line.trimEnd()).join('\n'); }
 
-async function finish(id: string, io: Server, data: { status: string; executionTime?: number; passedCases?: number; totalCases: number; error?: string }) {
-  const submission = await prisma.submission.update({ where: { id }, data: { status: data.status, executionTime: data.executionTime, passedCases: data.passedCases ?? 0, totalCases: data.totalCases } });
-  io.to(`PARTICIPANT:${submission.participantId}`).emit('SUBMISSION_RESULT', { ...submission, error: data.error });
+async function finish(id: string, data: { status: string; executionTime?: number; passedCases?: number; totalCases: number; error?: string }) {
+  const submission = await prisma.submission.update({ 
+      where: { id }, 
+      data: { status: data.status, executionTime: data.executionTime, passedCases: data.passedCases ?? 0, totalCases: data.totalCases } 
+  });
+  return { ...submission, error: data.error };
 }

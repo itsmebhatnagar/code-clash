@@ -3,6 +3,7 @@ import jwt from 'jsonwebtoken';
 import { prisma } from './db';
 import { getAdminMetrics, markParticipantConnected, markParticipantDisconnected } from './presence';
 import { recordAuditLog } from './audit';
+import { trackSessionConnection, trackSessionDisconnection, updateSessionActivity } from './antiCheat';
 
 const JWT_SECRET = process.env.JWT_SECRET;
 const roundTimers = new Map<string, NodeJS.Timeout>();
@@ -37,17 +38,26 @@ export const setupSockets = (io: Server) => {
 
   io.on('connection', (socket: Socket) => {
     const user = socket.data.user;
+    const ip = socket.handshake.address;
+    const userAgent = socket.handshake.headers['user-agent'];
     console.log(`User connected: ${user.id} (${user.role})`);
     socket.join(user.role);
     socket.join(`PARTICIPANT:${user.id}`);
 
     if (user.role === 'PARTICIPANT') {
       markParticipantConnected(user.id);
+      void trackSessionConnection(user.id, socket.id, ip, userAgent);
       void broadcastAdminMetrics(io);
     }
     if (user.role === 'ADMIN') void broadcastAdminMetrics(io, socket);
 
     socket.emit('SYNC_TIME', { serverTime: Date.now() });
+
+    socket.on('ACTIVITY_PING', async () => {
+      if (user.role === 'PARTICIPANT') {
+        void updateSessionActivity(user.id, socket.id);
+      }
+    });
 
     if (user.role === 'ADMIN') {
       socket.on('START_ROUND', async (data: { roundId: string }) => {
@@ -123,6 +133,7 @@ export const setupSockets = (io: Server) => {
       console.log(`User disconnected: ${user.id}`);
       if (user.role === 'PARTICIPANT') {
         markParticipantDisconnected(user.id);
+        void trackSessionDisconnection(user.id, socket.id);
         void broadcastAdminMetrics(io);
       }
     });

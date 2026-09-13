@@ -4,8 +4,9 @@ import { authenticate } from '../middleware/authMiddleware';
 import { asyncHandler } from '../middleware/asyncHandler';
 import { AppError } from '../middleware/errorMiddleware';
 import { Server } from 'socket.io';
-import { enqueueSubmission } from '../judgeWorker';
+import { submissionsQueue } from '../queue';
 import { rateLimit } from '../middleware/rateLimit';
+import { generateDeviceFingerprint } from '../antiCheat';
 
 export default function createContestRouter(io: Server) {
   const router = Router();
@@ -50,16 +51,19 @@ export default function createContestRouter(io: Server) {
       prisma.evaluation.findUnique({ where: { participantId: req.user.id }, select: { finalScore: true } }),
     ]);
 
-    const rankIndex = evaluation ? await prisma.evaluation.count({ where: { participant: { role: 'PARTICIPANT' }, finalScore: { gt: evaluation.finalScore } } }) : null;
+    const { getParticipantRank } = await import('../redis');
+    const rankIndex = evaluation ? await getParticipantRank(req.user.id) : null;
     res.json({
       round: { id: activeRound.id, name: activeRound.name, duration: activeRound.duration, startTime: activeRound.startTime, problems: activeRound.problems },
-      stats: { solved: solved.length, attempted: attempted.length, totalProblems: activeRound.problems.length, score: evaluation?.finalScore || 0, rank: rankIndex === null ? null : rankIndex + 1 }
+      stats: { solved: solved.length, attempted: attempted.length, totalProblems: activeRound.problems.length, score: evaluation?.finalScore || 0, rank: rankIndex }
     });
   }));
 
   router.post('/submit', asyncHandler(async (req: any, res) => {
     const { problemId, roundId, language, sourceCode } = req.body;
     const participantId = req.user.id;
+    const ip = req.ip || req.connection?.remoteAddress;
+    const userAgent = req.headers['user-agent'];
 
     if (!problemId || !roundId || !language || !sourceCode) {
       throw new AppError(400, 'Missing submission fields');
@@ -72,6 +76,8 @@ export default function createContestRouter(io: Server) {
     if (!participant || participant.role !== 'PARTICIPANT') throw new AppError(403, 'Only participants can submit code');
     if (participant.status === 'DISQUALIFIED') throw new AppError(403, 'Disqualified participants cannot submit code');
 
+    const deviceFingerprint = generateDeviceFingerprint(userAgent || '', ip || '');
+
     const submission = await prisma.$transaction(async (transaction) => {
       const round = await transaction.round.findUnique({ where: { id: roundId }, select: { id: true, status: true } });
       if (!round || round.status !== 'ACTIVE') throw new AppError(409, 'Round is not active');
@@ -79,10 +85,20 @@ export default function createContestRouter(io: Server) {
       const problem = await transaction.problem.findUnique({ where: { id: problemId }, select: { roundId: true } });
       if (!problem || problem.roundId !== roundId) throw new AppError(400, 'Problem does not belong to the requested round');
 
-      return transaction.submission.create({ data: { participantId, problemId, language, sourceCode, status: 'PENDING' } });
+      return transaction.submission.create({ 
+        data: { 
+          participantId, 
+          problemId, 
+          language, 
+          sourceCode, 
+          status: 'PENDING',
+          ipAddress: ip,
+          deviceFingerprint
+        } 
+      });
     });
 
-    enqueueSubmission(submission.id, io);
+    void submissionsQueue.add('judge', { submissionId: submission.id });
     res.status(202).json(submission);
   }));
 

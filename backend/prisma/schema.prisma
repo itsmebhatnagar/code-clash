@@ -27,6 +27,7 @@ model User {
   workstation  Workstation?
   submissions  Submission[]
   evaluations  Evaluation[]
+  authLogs     AuthLog[]
 }
 
 model Workstation {
@@ -98,6 +99,8 @@ model Submission {
   passedCases   Int      @default(0)
   totalCases    Int      @default(0)
   createdAt     DateTime @default(now())
+  ipAddress     String?
+  deviceFingerprint String?
 }
 
 model Evaluation {
@@ -179,4 +182,29 @@ model SuddenDeathRound {
   endTime             DateTime?
   createdBy           String
   createdAt           DateTime @default(now())
+}
+
+model AuthLog {
+  id          String   @id @default(uuid())
+  userId      String
+  action      String   // LOGIN, LOGOUT, REGISTER, REFRESH, REVOKE
+  ipAddress   String?
+  userAgent   String?
+  timestamp   DateTime @default(now())
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model ParticipantSession {
+  id                String   @id @default(uuid())
+  participantId     String
+  sessionId         String
+  ipAddress         String?
+  deviceFingerprint String?
+  userAgent         String?
+  connectedAt       DateTime @default(now())
+  lastActivity      DateTime @default(now())
+  disconnectedAt     DateTime?
+  disconnectReason  String?
+  suspiciousActivity Boolean @default(false)
+  activityFlags     String?  // JSON array of flags like "rapid_reconnect", "multiple_sessions"
 }

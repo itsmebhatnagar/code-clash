@@ -7,6 +7,8 @@ import { recordAuditLog } from '../audit';
 import { asyncHandler } from '../middleware/asyncHandler';
 import { AppError } from '../middleware/errorMiddleware';
 import bcrypt from 'bcrypt';
+import { syncLeaderboardScore } from '../redis';
+import { getSuspiciousParticipants, getParticipantSessions } from '../antiCheat';
 
 export default function createAdminRouter(io: Server) {
   const router = Router();
@@ -22,7 +24,7 @@ export default function createAdminRouter(io: Server) {
     const status = req.query.status ? String(req.query.status) : undefined;
     const participants = await prisma.user.findMany({
       where: { role: 'PARTICIPANT', ...(status ? { status } : {}), ...(query ? { OR: [{ name: { contains: query } }, { email: { contains: query } }, { collegeId: { contains: query } }] } : {}) },
-      select: { id: true, name: true, email: true, college: true, collegeId: true, phone: true, status: true, workstation: true, evaluations: true },
+      select: { id: true, name: true, email: true, college: true, collegeId: true, phone: true, status: true, workstation: true },
       orderBy: { createdAt: 'desc' }
     });
     res.json(participants);
@@ -30,9 +32,19 @@ export default function createAdminRouter(io: Server) {
 
   router.get('/participants/:id', asyncHandler(async (req, res) => {
     const participantId = req.params.id as string;
-    const participant = await prisma.user.findFirst({ where: { id: participantId, role: 'PARTICIPANT' }, select: { id: true, name: true, email: true, college: true, collegeId: true, phone: true, status: true, collegeIdVerified: true, checkedInAt: true, disqualificationReason: true, workstation: true, evaluations: true, submissions: { orderBy: { createdAt: 'desc' } } } });
+    const participant = await prisma.user.findFirst({ where: { id: participantId, role: 'PARTICIPANT' }, select: { id: true, name: true, email: true, college: true, collegeId: true, phone: true, status: true, collegeIdVerified: true, checkedInAt: true, disqualificationReason: true, workstation: true } });
     if (!participant) throw new AppError(404, 'Participant not found');
     res.json(participant);
+  }));
+
+  router.get('/participants/:id/submissions', asyncHandler(async (req, res) => {
+    const submissions = await prisma.submission.findMany({ where: { participantId: req.params.id as string }, orderBy: { createdAt: 'desc' } });
+    res.json(submissions);
+  }));
+
+  router.get('/participants/:id/evaluation', asyncHandler(async (req, res) => {
+    const evaluation = await prisma.evaluation.findUnique({ where: { participantId: req.params.id as string } });
+    res.json(evaluation);
   }));
 
   router.post('/participants', asyncHandler(async (req: any, res) => {
@@ -132,13 +144,23 @@ export default function createAdminRouter(io: Server) {
   }));
 
   router.get('/problems', asyncHandler(async (_req, res) => {
-    res.json(await prisma.problem.findMany({ include: { round: true, examples: true, testCases: true }, orderBy: { title: 'asc' } }));
+    res.json(await prisma.problem.findMany({ include: { round: true }, orderBy: { title: 'asc' } }));
   }));
 
   router.get('/problems/:id', asyncHandler(async (req, res) => {
-    const problem = await prisma.problem.findUnique({ where: { id: req.params.id as string }, include: { round: true, examples: true, testCases: true } });
+    const problem = await prisma.problem.findUnique({ where: { id: req.params.id as string }, include: { round: true } });
     if (!problem) throw new AppError(404, 'Problem not found');
     res.json(problem);
+  }));
+
+  router.get('/problems/:id/test-cases', asyncHandler(async (req, res) => {
+    const testCases = await prisma.testCase.findMany({ where: { problemId: req.params.id as string } });
+    res.json(testCases);
+  }));
+
+  router.get('/problems/:id/examples', asyncHandler(async (req, res) => {
+    const examples = await prisma.problemExample.findMany({ where: { problemId: req.params.id as string } });
+    res.json(examples);
   }));
 
   router.delete('/problems/:id', asyncHandler(async (req: any, res) => {
@@ -225,6 +247,10 @@ export default function createAdminRouter(io: Server) {
     const existing = await prisma.evaluation.findUnique({ where: { participantId: req.params.participantId as string } });
     if (existing?.lockedAt) throw new AppError(409, 'Evaluation is locked');
     const evaluation = await prisma.evaluation.upsert({ where: { participantId: req.params.participantId as string }, update: { codeQuality: quality, logicClarity: clarity, judgeComments }, create: { participantId: req.params.participantId as string, codeQuality: quality, logicClarity: clarity, judgeComments } });
+    
+    const { syncLeaderboardScore: _sync1 } = await import('../redis').catch(() => ({ syncLeaderboardScore: syncLeaderboardScore }));
+    await syncLeaderboardScore(evaluation.participantId, evaluation.finalScore);
+
     await recordAuditLog(req.user.id, 'SCORE_ADJUSTMENT', `Judge evaluation updated for participant ${req.params.participantId}`);
     res.json(evaluation);
   }));
@@ -243,6 +269,8 @@ export default function createAdminRouter(io: Server) {
       update: { round1Score: normalizedRound1Score, round2Score: normalizedRound2Score, manualAdjustments: normalizedManualAdjustments, judgeComments, finalScore },
       create: { participantId, round1Score: normalizedRound1Score, round2Score: normalizedRound2Score, manualAdjustments: normalizedManualAdjustments, judgeComments, finalScore }
     });
+    await syncLeaderboardScore(participantId, finalScore);
+
     await prisma.scoreAdjustment.create({ data: { participantId, adminId: req.user.id, round1Score: normalizedRound1Score, round2Score: normalizedRound2Score, manualAdjustments: normalizedManualAdjustments, finalScore, reason: String(req.body.reason || 'Manual score adjustment') } });
     await recordAuditLog(req.user.id, 'SCORE_ADJUSTMENT', `Adjusted score for participant ${participantId}`);
     res.json(evaluation);
@@ -256,6 +284,8 @@ export default function createAdminRouter(io: Server) {
     const adjustment = await prisma.scoreAdjustment.findUnique({ where: { id: req.params.adjustmentId } });
     if (!adjustment || adjustment.reversedAt) throw new AppError(404, 'Active score adjustment not found');
     const evaluation = await prisma.evaluation.update({ where: { participantId: adjustment.participantId }, data: { round1Score: 0, round2Score: 0, manualAdjustments: 0, finalScore: 0 } });
+    await syncLeaderboardScore(adjustment.participantId, 0);
+
     const reversed = await prisma.scoreAdjustment.update({ where: { id: adjustment.id }, data: { reversedAt: new Date(), reversedBy: req.user.id } });
     await recordAuditLog(req.user.id, 'SCORE_ADJUSTMENT', `Score adjustment ${adjustment.id} reversed for participant ${adjustment.participantId}`);
     res.json({ evaluation, adjustment: reversed });
@@ -264,6 +294,16 @@ export default function createAdminRouter(io: Server) {
   router.get('/audit-logs', asyncHandler(async (req, res) => {
     const logs = await prisma.auditLog.findMany({ where: req.query.actionType ? { actionType: String(req.query.actionType) } : undefined, orderBy: { timestamp: 'desc' }, take: Math.min(Number(req.query.limit || 100), 500) });
     res.json(logs);
+  }));
+
+  router.get('/anti-cheat/suspicious', asyncHandler(async (_req, res) => {
+    const suspicious = await getSuspiciousParticipants();
+    res.json(suspicious);
+  }));
+
+  router.get('/anti-cheat/participants/:id/sessions', asyncHandler(async (req, res) => {
+    const sessions = await getParticipantSessions(String(req.params.id));
+    res.json(sessions);
   }));
 
   router.get('/settings', asyncHandler(async (_req, res) => {
