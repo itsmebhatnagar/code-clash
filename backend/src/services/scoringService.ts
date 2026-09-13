@@ -1,3 +1,4 @@
+import type { ScoreAdjustment } from '@prisma/client';
 import { prisma } from '../db';
 import { recordAuditLog } from '../audit';
 import { syncLeaderboardScore } from '../redis';
@@ -15,24 +16,6 @@ export interface AdjustScoreInput {
   manualAdjustments?: number;
   judgeComments?: string;
   reason?: string;
-}
-
-export interface ScoreAdjustmentRecord {
-  id: string;
-  participantId: string;
-  adminId: string;
-  round1Score: number;
-  round2Score: number;
-  manualAdjustments: number;
-  finalScore: number;
-  previousRound1Score?: number | null;
-  previousRound2Score?: number | null;
-  previousManualAdjustments?: number | null;
-  previousFinalScore?: number | null;
-  reason: string;
-  reversedAt?: Date | null;
-  reversedBy?: string | null;
-  createdAt: Date;
 }
 
 export async function listEvaluations() {
@@ -133,10 +116,12 @@ export async function adjustScore(
 
   const finalScore = normalizedRound1Score + normalizedRound2Score + normalizedManualAdjustments;
 
-  const prevRound1Score = existingEvaluation?.round1Score ?? 0;
-  const prevRound2Score = existingEvaluation?.round2Score ?? 0;
-  const prevManualAdjustments = existingEvaluation?.manualAdjustments ?? 0;
-  const prevFinalScore = existingEvaluation?.finalScore ?? (prevRound1Score + prevRound2Score + prevManualAdjustments);
+  // Snapshot previous state so reversal can restore it exactly.
+  const prevRound1Score        = existingEvaluation?.round1Score ?? 0;
+  const prevRound2Score        = existingEvaluation?.round2Score ?? 0;
+  const prevManualAdjustments  = existingEvaluation?.manualAdjustments ?? 0;
+  const prevFinalScore         = existingEvaluation?.finalScore
+    ?? (prevRound1Score + prevRound2Score + prevManualAdjustments);
 
   const evaluation = await prisma.evaluation.upsert({
     where: { participantId },
@@ -159,18 +144,18 @@ export async function adjustScore(
 
   await syncLeaderboardScore(participantId, finalScore);
 
-  await (prisma.scoreAdjustment.create as any)({
+  await prisma.scoreAdjustment.create({
     data: {
       participantId,
       adminId,
-      round1Score: normalizedRound1Score,
-      round2Score: normalizedRound2Score,
-      manualAdjustments: normalizedManualAdjustments,
+      round1Score:              normalizedRound1Score,
+      round2Score:              normalizedRound2Score,
+      manualAdjustments:        normalizedManualAdjustments,
       finalScore,
-      previousRound1Score: prevRound1Score,
-      previousRound2Score: prevRound2Score,
+      previousRound1Score:      prevRound1Score,
+      previousRound2Score:      prevRound2Score,
       previousManualAdjustments: prevManualAdjustments,
-      previousFinalScore: prevFinalScore,
+      previousFinalScore:       prevFinalScore,
       reason: String(input.reason || 'Manual score adjustment'),
     },
   });
@@ -187,10 +172,9 @@ export async function getScoreHistory(participantId: string) {
 }
 
 export async function reverseScoreAdjustment(adjustmentId: string, adminId: string) {
-  const rawAdjustment = await prisma.scoreAdjustment.findUnique({
+  const adjustment: ScoreAdjustment | null = await prisma.scoreAdjustment.findUnique({
     where: { id: adjustmentId },
   });
-  const adjustment = rawAdjustment as unknown as ScoreAdjustmentRecord | null;
 
   if (!adjustment || adjustment.reversedAt) {
     throw new AppError(404, 'Active score adjustment not found');
@@ -209,15 +193,11 @@ export async function reverseScoreAdjustment(adjustmentId: string, adminId: stri
     data: { reversedAt: new Date(), reversedBy: adminId },
   });
 
-  // Calculate new score state based on remaining active adjustments or pre-adjustment state
-  const rawRemaining = await prisma.scoreAdjustment.findMany({
-    where: {
-      participantId: adjustment.participantId,
-      reversedAt: null,
-    },
+  // Determine the correct score state after removing this adjustment.
+  const remainingActiveAdjustments: ScoreAdjustment[] = await prisma.scoreAdjustment.findMany({
+    where: { participantId: adjustment.participantId, reversedAt: null },
     orderBy: { createdAt: 'desc' },
   });
-  const remainingActiveAdjustments = rawRemaining as unknown as ScoreAdjustmentRecord[];
 
   let newRound1Score: number;
   let newRound2Score: number;
@@ -225,50 +205,47 @@ export async function reverseScoreAdjustment(adjustmentId: string, adminId: stri
   let newFinalScore: number;
 
   if (remainingActiveAdjustments.length > 0) {
-    // If the reversed adjustment was the latest, restore to the latest remaining active adjustment
     const latestRemaining = remainingActiveAdjustments[0];
-    if (new Date(adjustment.createdAt).getTime() >= new Date(latestRemaining.createdAt).getTime()) {
-      newRound1Score = latestRemaining.round1Score;
-      newRound2Score = latestRemaining.round2Score;
+    if (adjustment.createdAt >= latestRemaining.createdAt) {
+      // Reversed the most-recent adjustment — restore to the next most-recent.
+      newRound1Score       = latestRemaining.round1Score;
+      newRound2Score       = latestRemaining.round2Score;
       newManualAdjustments = latestRemaining.manualAdjustments;
-      newFinalScore = latestRemaining.finalScore;
+      newFinalScore        = latestRemaining.finalScore;
     } else {
-      // Reversing an earlier adjustment while subsequent adjustments exist:
-      // Subtract the delta introduced by this adjustment
-      const deltaR1 = adjustment.round1Score - (adjustment.previousRound1Score ?? 0);
-      const deltaR2 = adjustment.round2Score - (adjustment.previousRound2Score ?? 0);
+      // Reversing an older adjustment while newer ones are still active:
+      // subtract the delta this adjustment introduced.
+      const deltaR1     = adjustment.round1Score      - (adjustment.previousRound1Score      ?? 0);
+      const deltaR2     = adjustment.round2Score      - (adjustment.previousRound2Score      ?? 0);
       const deltaManual = adjustment.manualAdjustments - (adjustment.previousManualAdjustments ?? 0);
 
-      newRound1Score = (existingEvaluation?.round1Score ?? 0) - deltaR1;
-      newRound2Score = (existingEvaluation?.round2Score ?? 0) - deltaR2;
+      newRound1Score       = (existingEvaluation?.round1Score      ?? 0) - deltaR1;
+      newRound2Score       = (existingEvaluation?.round2Score      ?? 0) - deltaR2;
       newManualAdjustments = (existingEvaluation?.manualAdjustments ?? 0) - deltaManual;
-      newFinalScore = newRound1Score + newRound2Score + newManualAdjustments;
+      newFinalScore        = newRound1Score + newRound2Score + newManualAdjustments;
     }
+  } else if (adjustment.previousRound1Score !== null && adjustment.previousRound1Score !== undefined) {
+    // No remaining adjustments — restore the snapshot taken before this one.
+    newRound1Score       = adjustment.previousRound1Score;
+    newRound2Score       = adjustment.previousRound2Score      ?? 0;
+    newManualAdjustments = adjustment.previousManualAdjustments ?? 0;
+    newFinalScore        = adjustment.previousFinalScore
+      ?? (newRound1Score + newRound2Score + newManualAdjustments);
   } else {
-    // No remaining active adjustments:
-    // Restore the state that existed before this adjustment
-    if (adjustment.previousRound1Score !== null && adjustment.previousRound1Score !== undefined) {
-      newRound1Score = adjustment.previousRound1Score;
-      newRound2Score = adjustment.previousRound2Score ?? 0;
-      newManualAdjustments = adjustment.previousManualAdjustments ?? 0;
-      newFinalScore = adjustment.previousFinalScore ?? (newRound1Score + newRound2Score + newManualAdjustments);
-    } else {
-      // Fallback if previous* was not recorded:
-      // Revert manual adjustment delta while preserving base round scores
-      newRound1Score = existingEvaluation?.round1Score ?? 0;
-      newRound2Score = existingEvaluation?.round2Score ?? 0;
-      newManualAdjustments = 0;
-      newFinalScore = newRound1Score + newRound2Score;
-    }
+    // Legacy record without a snapshot — fall back to zeroing manual adjustments.
+    newRound1Score       = existingEvaluation?.round1Score  ?? 0;
+    newRound2Score       = existingEvaluation?.round2Score  ?? 0;
+    newManualAdjustments = 0;
+    newFinalScore        = newRound1Score + newRound2Score;
   }
 
   const evaluation = await prisma.evaluation.update({
     where: { participantId: adjustment.participantId },
     data: {
-      round1Score: newRound1Score,
-      round2Score: newRound2Score,
+      round1Score:       newRound1Score,
+      round2Score:       newRound2Score,
       manualAdjustments: newManualAdjustments,
-      finalScore: newFinalScore,
+      finalScore:        newFinalScore,
     },
   });
 
