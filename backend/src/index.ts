@@ -1,10 +1,8 @@
+import 'dotenv/config';
 import express from 'express';
 import cors from 'cors';
 import { createServer } from 'http';
 import { Server } from 'socket.io';
-import dotenv from 'dotenv';
-
-dotenv.config();
 
 const isProduction = process.env.NODE_ENV === 'production';
 const configuredOrigins = (process.env.FRONTEND_URL || '')
@@ -38,6 +36,7 @@ import createAuthRouter from './routes/auth';
 import createAdminRouter from './routes/admin/index';
 import createContestRouter from './routes/contest';
 import leaderboardRoutes from './routes/leaderboard';
+import createHealthRouter from './routes/health';
 import { setupSockets } from './sockets';
 import { errorMiddleware } from './middleware/errorMiddleware';
 import bcrypt from 'bcrypt';
@@ -54,12 +53,9 @@ app.use('/api/auth', rateLimit(15 * 60_000, 100), createAuthRouter(io));
 app.use('/api/admin', createAdminRouter(io));
 app.use('/api/contest', createContestRouter(io));
 app.use('/api/leaderboard', leaderboardRoutes);
+app.use('/api/health', createHealthRouter());
 
-app.get('/api/health', (req, res) => {
-  res.json({ status: 'ok', message: 'Code Clash Backend is running' });
-});
-
-import { submissionsQueueEvents } from './queue';
+import { submissionsQueue, submissionsQueueEvents } from './queue';
 
 submissionsQueueEvents.on('completed', async ({ jobId, returnvalue }) => {
   if (returnvalue && typeof returnvalue === 'object' && 'participantId' in returnvalue) {
@@ -69,6 +65,23 @@ submissionsQueueEvents.on('completed', async ({ jobId, returnvalue }) => {
 
 submissionsQueueEvents.on('failed', async ({ jobId, failedReason }) => {
   console.error(`Job ${jobId} failed with reason: ${failedReason}`);
+  if (!jobId) return;
+
+  try {
+    const job = await submissionsQueue.getJob(jobId);
+    if (!job || await job.getState() !== 'failed') return;
+
+    const submission = await prisma.submission.update({
+      where: { id: job.data.submissionId },
+      data: { status: 'JUDGE_FAILED' },
+    });
+    io.to(`PARTICIPANT:${submission.participantId}`).emit('SUBMISSION_RESULT', {
+      ...submission,
+      error: 'The judge could not process this submission. Please submit again.',
+    });
+  } catch (error) {
+    console.error(`Failed to finalize submission for job ${jobId}:`, error);
+  }
 });
 
 setupSockets(io);

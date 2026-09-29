@@ -3,6 +3,7 @@ import os from 'os';
 import path from 'path';
 import { spawn } from 'child_process';
 import { prisma } from './db';
+import { recordSubmissionScore } from './services/scoringService';
 
 const MAX_OUTPUT_BYTES = 256 * 1024;
 const sandboxImage = process.env.JUDGE_DOCKER_IMAGE;
@@ -16,7 +17,10 @@ export class InfraError extends Error {
   }
 }
 
-type Language = 'javascript' | 'python' | 'cpp' | 'java';
+type Language = 'c' | 'cpp' | 'java' | 'python' | 'javascript';
+type PreparedCommand =
+  | { command: string; args: string[]; compilationTime: number | null }
+  | { compilationError: string; compilationTime: number; compilationTimedOut?: boolean };
 
 export async function judgeSubmission(id: string) {
   let submission;
@@ -33,10 +37,10 @@ export async function judgeSubmission(id: string) {
 
   const language = normalizeLanguage(submission.language);
   if (!language) {
-    return finish(id, { status: 'COMPILE_ERROR', totalCases: submission.problem.testCases.length, error: 'Unsupported language' });
+    return finish(id, { status: 'COMPILE_ERROR', compilationTime: null, totalCases: submission.problem.testCases.length, error: 'Unsupported language' });
   }
   if (submission.problem.testCases.length === 0) {
-    return finish(id, { status: 'COMPILE_ERROR', totalCases: 0, error: 'Problem has no test cases' });
+    return finish(id, { status: 'COMPILE_ERROR', compilationTime: null, totalCases: 0, error: 'Problem has no test cases' });
   }
 
   if (requireSandbox && !sandboxImage) {
@@ -51,30 +55,35 @@ export async function judgeSubmission(id: string) {
   }
 
   try {
-    const command = await prepareCommand(language, submission.sourceCode, workspace, submission.problem.memoryLimit);
-    if (!command) {
-      return finish(id, { status: 'COMPILE_ERROR', totalCases: submission.problem.testCases.length, error: 'Compiler or runtime is not installed' });
+    const prepared = await prepareCommand(language, submission.sourceCode, workspace, submission.problem.memoryLimit);
+    if ('compilationError' in prepared) {
+      return finish(id, {
+        status: prepared.compilationTimedOut ? 'COMPILATION_TIME_LIMIT_EXCEEDED' : 'COMPILE_ERROR',
+        compilationTime: prepared.compilationTime,
+        totalCases: submission.problem.testCases.length,
+        error: prepared.compilationError,
+      });
     }
 
     const started = Date.now();
     let passedCases = 0;
     for (const testCase of submission.problem.testCases) {
-      const result = await runProcess(command.command, command.args, workspace, testCase.input, submission.problem.timeLimit, submission.problem.memoryLimit);
+      const result = await runProcess(prepared.command, prepared.args, workspace, testCase.input, submission.problem.timeLimit, submission.problem.memoryLimit);
       if (result.timeout) {
-        return finish(id, { status: 'TIME_LIMIT_EXCEEDED', executionTime: Date.now() - started, passedCases, totalCases: submission.problem.testCases.length, error: 'Time limit exceeded' });
+        return finish(id, { status: passedCases ? 'PARTIAL' : 'TIME_LIMIT_EXCEEDED', compilationTime: prepared.compilationTime, executionTime: Date.now() - started, passedCases, totalCases: submission.problem.testCases.length, error: 'Time limit exceeded' });
       }
       if (result.outputLimit) {
-        return finish(id, { status: 'OUTPUT_LIMIT_EXCEEDED', executionTime: Date.now() - started, passedCases, totalCases: submission.problem.testCases.length, error: 'Output limit exceeded' });
+        return finish(id, { status: passedCases ? 'PARTIAL' : 'OUTPUT_LIMIT_EXCEEDED', compilationTime: prepared.compilationTime, executionTime: Date.now() - started, passedCases, totalCases: submission.problem.testCases.length, error: 'Output limit exceeded' });
       }
       if (result.exitCode !== 0) {
-        return finish(id, { status: 'RUNTIME_ERROR', executionTime: Date.now() - started, passedCases, totalCases: submission.problem.testCases.length, error: result.stderr || 'Process exited with an error' });
+        return finish(id, { status: passedCases ? 'PARTIAL' : 'RUNTIME_ERROR', compilationTime: prepared.compilationTime, executionTime: Date.now() - started, passedCases, totalCases: submission.problem.testCases.length, error: result.stderr || 'Process exited with an error' });
       }
       if (normalizeOutput(result.stdout) !== normalizeOutput(testCase.output)) {
-        return finish(id, { status: 'WRONG_ANSWER', executionTime: Date.now() - started, passedCases, totalCases: submission.problem.testCases.length, error: 'Output did not match expected result' });
+        return finish(id, { status: passedCases ? 'PARTIAL' : 'WRONG_ANSWER', compilationTime: prepared.compilationTime, executionTime: Date.now() - started, passedCases, totalCases: submission.problem.testCases.length, error: 'Output did not match expected result' });
       }
       passedCases += 1;
     }
-    return finish(id, { status: passedCases === submission.problem.testCases.length ? 'ACCEPTED' : 'WRONG_ANSWER', executionTime: Date.now() - started, passedCases, totalCases: submission.problem.testCases.length });
+    return finish(id, { status: passedCases === submission.problem.testCases.length ? 'ACCEPTED' : 'WRONG_ANSWER', compilationTime: prepared.compilationTime, executionTime: Date.now() - started, passedCases, totalCases: submission.problem.testCases.length });
   } finally {
     await rm(workspace, { recursive: true, force: true });
   }
@@ -84,30 +93,44 @@ export function normalizeLanguage(language: string): Language | null {
   const value = language.toLowerCase();
   if (value === 'javascript' || value === 'js' || value === 'node') return 'javascript';
   if (value === 'python' || value === 'python3') return 'python';
+  if (value === 'c') return 'c';
   if (value === 'cpp' || value === 'c++') return 'cpp';
   if (value === 'java') return 'java';
   return null;
 }
 
-async function prepareCommand(language: Language, sourceCode: string, workspace: string, memoryLimitMb: number) {
+async function prepareCommand(language: Language, sourceCode: string, workspace: string, memoryLimitMb: number): Promise<PreparedCommand> {
   if (language === 'javascript') {
     await writeFile(path.join(workspace, 'Main.js'), sourceCode);
-    return { command: sandboxImage ? 'node' : process.execPath, args: [`--max-old-space-size=${Math.max(16, memoryLimitMb)}`, 'Main.js'] };
+    return { command: sandboxImage ? 'node' : process.execPath, args: [`--max-old-space-size=${Math.max(16, memoryLimitMb)}`, 'Main.js'], compilationTime: null };
   }
   if (language === 'python') {
     await writeFile(path.join(workspace, 'main.py'), sourceCode);
-    return { command: sandboxImage ? 'python3' : (process.platform === 'win32' ? 'python' : 'python3'), args: ['-u', 'main.py'] };
+    return { command: sandboxImage ? 'python3' : (process.platform === 'win32' ? 'python' : 'python3'), args: ['-u', 'main.py'], compilationTime: null };
   }
-  if (language === 'cpp') {
-    await writeFile(path.join(workspace, 'main.cpp'), sourceCode);
-    const compiled = await runProcess(sandboxImage ? 'g++' : 'g++', ['-std=c++17', '-O2', 'main.cpp', '-o', 'main'], workspace, '', 10_000, memoryLimitMb);
-    if (compiled.exitCode !== 0 || compiled.timeout) return null;
-    return { command: sandboxImage ? '/workspace/main' : path.join(workspace, process.platform === 'win32' ? 'main.exe' : 'main'), args: [] };
+  if (language === 'c' || language === 'cpp') {
+    const isCpp = language === 'cpp';
+    await writeFile(path.join(workspace, isCpp ? 'main.cpp' : 'main.c'), sourceCode);
+    const compileStarted = Date.now();
+    const compiled = await runProcess(isCpp ? 'g++' : 'gcc', [isCpp ? '-std=c++17' : '-std=c17', '-O2', isCpp ? 'main.cpp' : 'main.c', '-o', 'main'], workspace, '', 10_000, memoryLimitMb);
+    const compilationTime = Date.now() - compileStarted;
+    if (compiled.exitCode !== 0 || compiled.timeout) return {
+      compilationError: compiled.timeout ? 'Compilation time limit exceeded' : compiled.stderr || compiled.stdout || 'Compilation failed',
+      compilationTime,
+      compilationTimedOut: compiled.timeout,
+    };
+    return { command: sandboxImage ? '/workspace/main' : path.join(workspace, process.platform === 'win32' ? 'main.exe' : 'main'), args: [], compilationTime };
   }
   await writeFile(path.join(workspace, 'Main.java'), sourceCode);
+  const compileStarted = Date.now();
   const compiled = await runProcess(sandboxImage ? 'javac' : 'javac', ['Main.java'], workspace, '', 10_000, memoryLimitMb);
-  if (compiled.exitCode !== 0 || compiled.timeout) return null;
-  return { command: sandboxImage ? 'java' : 'java', args: ['-Xmx' + Math.max(16, memoryLimitMb) + 'm', 'Main'] };
+  const compilationTime = Date.now() - compileStarted;
+  if (compiled.exitCode !== 0 || compiled.timeout) return {
+    compilationError: compiled.timeout ? 'Compilation time limit exceeded' : compiled.stderr || compiled.stdout || 'Compilation failed',
+    compilationTime,
+    compilationTimedOut: compiled.timeout,
+  };
+  return { command: 'java', args: ['-Xmx' + Math.max(16, memoryLimitMb) + 'm', 'Main'], compilationTime };
 }
 
 function runProcess(command: string, args: string[], cwd: string, input: string, timeoutMs: number, memoryLimitMb = 128): Promise<{ exitCode: number | null; stdout: string; stderr: string; timeout: boolean; outputLimit: boolean }> {
@@ -158,10 +181,11 @@ function runProcess(command: string, args: string[], cwd: string, input: string,
 
 export function normalizeOutput(value: string) { return value.replace(/\r\n/g, '\n').trim().split('\n').map((line) => line.trimEnd()).join('\n'); }
 
-async function finish(id: string, data: { status: string; executionTime?: number; passedCases?: number; totalCases: number; error?: string }) {
+async function finish(id: string, data: { status: string; compilationTime?: number | null; executionTime?: number; passedCases?: number; totalCases: number; error?: string }) {
   const submission = await prisma.submission.update({ 
       where: { id }, 
-      data: { status: data.status, executionTime: data.executionTime, passedCases: data.passedCases ?? 0, totalCases: data.totalCases } 
+  data: { status: data.status, compilationTime: data.compilationTime, executionTime: data.executionTime, passedCases: data.passedCases ?? 0, totalCases: data.totalCases }
   });
+  await recordSubmissionScore(id);
   return { ...submission, error: data.error };
 }

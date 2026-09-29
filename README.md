@@ -100,10 +100,20 @@ Features include:
 
 | Language | Runtime |
 | ---------- | --------- |
+| C | GCC |
 | C++ | GCC / G++ |
 | Java | OpenJDK |
 | Python | Python 3 |
-| JavaScript | Node.js |
+
+## Contest Rules
+
+The contest has exactly two rounds: **Code Run** and **Code in the Dark**. Participants compete solo.
+
+In Code Run, participants can see the problem and their screen while coding. In Code in the Dark, the admin-configured reading period starts when the round starts. The problem is visible during that period. When it ends, the participant interface blanks the screen and keeps the editor focused for blind coding. Participants can submit without seeing the screen using `Ctrl+Enter`; submissions are also sent when the round ends.
+
+Each question has an admin-configured point value. A correct solution earns full points, a solution passing some test cases earns the same proportion of points as the fraction of passed cases, and wrong answers or compile errors earn zero. Only the best-scoring attempt per question counts; equal-scoring attempts use the faster execution time.
+
+The final leaderboard orders by total points across both rounds, then by the sum of elapsed times from each round start to the participant's best-scoring submissions. Program execution duration is shown separately for review. Manual adjustments are separate and auditable; admins cannot overwrite automatically earned round scores.
 
 ---
 
@@ -311,7 +321,7 @@ The system supports:
 * Final scores
 * Score adjustments
 * Evaluation locking
-* Sudden-death bonus points
+* Fastest execution-time tie-break
 
 ---
 
@@ -319,7 +329,7 @@ The system supports:
 
 Code Clash supports both automated and manual evaluation.
 
-### Evaluation components
+### Scoring components
 
 ```text
 Round 1 Score
@@ -327,19 +337,15 @@ Round 1 Score
 Round 2 Score
  +
 Manual Adjustments
- +
-Code Quality
- +
-Logic Clarity
  ↓
 Final Score
 ```
 
-Administrators/judges can:
+Administrators can:
 
-* Evaluate participants
-* Add comments
-* Adjust scores
+* Configure each question's full-solution point value
+* Review automatic full, partial, and zero-point results
+* Apply bounded, audited manual adjustments
 * Lock evaluations
 * Reverse score adjustments
 * View adjustment history
@@ -581,57 +587,70 @@ cd code-clash
 
 ```bash
 cd backend
-npm install
+npm ci
 ```
 
-Create:
+Create the local environment file from the template (`Copy-Item .env.example .env` in PowerShell):
 
 ```text
 backend/.env
 ```
 
-Example:
+Start Redis:
+
+```bash
+docker compose up -d redis
+```
+
+The current Prisma schema uses SQLite. The default database is created under `backend/prisma/dev.db`.
+
+Apply the database migrations:
+
+```bash
+npm run db:deploy
+```
+
+The template contains local-development defaults:
 
 ```env
-DATABASE_URL="postgresql://USERNAME:PASSWORD@HOST:5432/DATABASE_NAME"
-
-JWT_SECRET="your-secure-random-secret"
-
+DATABASE_URL="file:./dev.db"
+JWT_SECRET="replace-with-a-long-random-secret"
 FRONTEND_URL="http://localhost:3000"
-
 PORT=5000
-
 REDIS_URL="redis://localhost:6379"
-
-JUDGE_DOCKER_IMAGE="code-clash-judge:latest"
-
+JUDGE_DOCKER_IMAGE=""
+JUDGE_REQUIRE_SANDBOX=false
 ADMIN_EMAIL="admin@example.com"
-ADMIN_PASSWORD="change-this-password"
+ADMIN_PASSWORD="replace-with-a-strong-password"
 ```
 
-Generate Prisma Client:
+Build the judge image when you want submissions sandboxed locally:
 
 ```bash
-npx prisma generate
+docker build -f judge.Dockerfile -t code-clash-judge:latest .
 ```
 
-Run migrations:
-
-```bash
-npx prisma migrate deploy
-```
-
-Start the backend:
+Start the backend API:
 
 ```bash
 npm run dev
 ```
+
+In another terminal, start the judge worker:
+
+```bash
+npm run dev:worker
+```
+
+For quick local iteration without Docker, leave `JUDGE_DOCKER_IMAGE` empty and keep `JUDGE_REQUIRE_SANDBOX=false`. Never use host execution in production; set `NODE_ENV=production` and configure the sandbox image.
 
 Backend:
 
 ```text
 http://localhost:5000
 ```
+
+`GET /api/health` is a liveness check; `GET /api/health/ready` verifies both the database and Redis before traffic is sent to the API.
 
 ---
 
@@ -666,28 +685,6 @@ http://localhost:3000
 
 ---
 
-# Judge Setup
-
-Build the judge image:
-
-```bash
-cd backend
-docker build -f judge.Dockerfile -t code-clash-judge:latest .
-```
-
-Ensure Docker is available to the judge worker.
-
-For local development, the project can optionally run without sandbox enforcement.
-
-For production:
-
-```env
-NODE_ENV=production
-JUDGE_DOCKER_IMAGE=code-clash-judge:latest
-```
-
-The production judge should **never fall back to host execution**.
-
 ---
 
 # Testing
@@ -696,6 +693,7 @@ Backend tests:
 
 ```bash
 cd backend
+npm run test:setup
 npm test
 ```
 

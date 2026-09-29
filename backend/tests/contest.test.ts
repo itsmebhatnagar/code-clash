@@ -4,6 +4,20 @@ import request from 'supertest';
 import {
   getApp, cleanDb, seedParticipant, seedRoundWithProblem, signToken, prisma
 } from './helpers';
+import { getRoundPhase } from '../src/services/contestService';
+
+describe('Round phases', () => {
+  test('Code Run starts in coding immediately', () => {
+    assert.equal(getRoundPhase({ roundType: 'CODE_RUN', readingPeriodSeconds: 0, startTime: new Date() }), 'CODING');
+  });
+
+  test('Code in the Dark reveals coding only after its reading period', () => {
+    const startTime = new Date(1_000_000);
+    const round = { roundType: 'CODE_IN_DARK', readingPeriodSeconds: 180, startTime };
+    assert.equal(getRoundPhase(round, startTime.getTime() + 179_999), 'READING');
+    assert.equal(getRoundPhase(round, startTime.getTime() + 180_000), 'CODING');
+  });
+});
 
 describe('POST /api/contest/submit', async () => {
   before(async () => { await cleanDb(); });
@@ -101,6 +115,23 @@ describe('POST /api/contest/submit', async () => {
     assert.equal(res.body.status, 'PENDING');
   });
 
+  test('blocks Code in the Dark submissions until reading ends', async () => {
+    const { round, problem } = await seedRoundWithProblem('ACTIVE');
+    await prisma.round.update({ where: { id: round.id }, data: { roundType: 'CODE_IN_DARK', readingPeriodSeconds: 180, startTime: new Date() } });
+    const participant = await seedParticipant({ status: 'CHECKED_IN' });
+    const app = await getApp();
+    const token = signToken({ id: participant.id, role: 'PARTICIPANT' });
+    const payload = { problemId: problem.id, roundId: round.id, language: 'python', sourceCode: 'print("hello")' };
+
+    const readingResponse = await request(app).post('/api/contest/submit').set('Authorization', `Bearer ${token}`).send(payload);
+    assert.equal(readingResponse.status, 409);
+    assert.match(readingResponse.body.error, /reading period/i);
+
+    await prisma.round.update({ where: { id: round.id }, data: { startTime: new Date(Date.now() - 181_000) } });
+    const codingResponse = await request(app).post('/api/contest/submit').set('Authorization', `Bearer ${token}`).send(payload);
+    assert.equal(codingResponse.status, 202);
+  });
+
   test('rejects submission when round has ended (endTime passed)', async () => {
     const round = await prisma.round.create({
       data: { 
@@ -167,6 +198,7 @@ describe('GET /api/contest/dashboard', async () => {
 
     assert.equal(res.status, 200);
     assert.equal(res.body.round.id, round.id);
+    assert.equal(res.body.round.phase, 'CODING');
     assert.equal(res.body.stats.solved, 0);
     assert.equal(res.body.stats.attempted, 0);
   });

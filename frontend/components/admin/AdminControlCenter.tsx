@@ -2,8 +2,8 @@
 
 import { useEffect, useState } from 'react'
 import { ClipboardList, Database, Gavel, Monitor, Plus, RefreshCw, Settings, ShieldCheck, Trash2, Unlock, UserCheck, Users, X } from 'lucide-react'
-import { adminFetch, adminMutate } from '../../lib/api'
-import type { AdminAuditLog, AdminEvaluation, AdminProblem, AdminRound, AdminSetting, AdminSubmission, AdminWorkstation, Participant, SuddenDeathRound, UserRole } from '../../lib/types'
+import { adminFetch, adminMutate, getLeaderboard } from '../../lib/api'
+import type { AdminAuditLog, AdminEvaluation, AdminProblem, AdminRound, AdminSetting, AdminSubmission, AdminWorkstation, LeaderboardEntry, Participant, SuddenDeathRound, UserRole } from '../../lib/types'
 
 type Tab = 'operations' | 'contest' | 'review' | 'system'
 type Message = { kind: 'success' | 'error'; text: string } | null
@@ -74,9 +74,10 @@ function Operations({ token, notify }: { token: string; notify: (message: Messag
 function ContestSetup({ token, notify }: { token: string; notify: (message: Message) => void }) {
   const [rounds, setRounds] = useState<AdminRound[]>([])
   const [problems, setProblems] = useState<AdminProblem[]>([])
-  const [roundName, setRoundName] = useState('')
+  const [roundType, setRoundType] = useState<'CODE_RUN' | 'CODE_IN_DARK'>('CODE_RUN')
   const [duration, setDuration] = useState('60')
-  const [problem, setProblem] = useState({ title: '', description: '', inputFormat: '', outputFormat: '', constraints: '', difficulty: 'MEDIUM', timeLimit: '1000', memoryLimit: '256', roundId: '' })
+  const [readingPeriodSeconds, setReadingPeriodSeconds] = useState('180')
+  const [problem, setProblem] = useState({ title: '', description: '', inputFormat: '', outputFormat: '', constraints: '', difficulty: 'MEDIUM', timeLimit: '1000', memoryLimit: '256', points: '100', roundId: '' })
   const [problemId, setProblemId] = useState('')
   const [testCase, setTestCase] = useState({ input: '', output: '', isHidden: true })
   const [example, setExample] = useState({ input: '', output: '', explanation: '' })
@@ -91,16 +92,21 @@ function ContestSetup({ token, notify }: { token: string; notify: (message: Mess
 
   async function createRound(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault()
-    const result = await adminMutate<AdminRound>(token, '/rounds', 'POST', { name: roundName, duration: Number(duration) })
-    if (!result.response.ok) return notify({ kind: 'error', text: 'Could not create round.' })
-    setRoundName(''); notify({ kind: 'success', text: 'Round created.' }); void load()
+    const result = await adminMutate<AdminRound & { error?: string }>(token, '/rounds', 'POST', { roundType, duration: Number(duration), readingPeriodSeconds: Number(readingPeriodSeconds) })
+    if (!result.response.ok) {
+      const errorText = typeof result.data === 'object' && result.data && 'error' in result.data && typeof result.data.error === 'string'
+        ? result.data.error
+        : 'Could not create round.'
+      return notify({ kind: 'error', text: errorText })
+    }
+    notify({ kind: 'success', text: `${result.data?.name || 'Round'} created.` }); void load()
   }
 
   async function createProblem(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault()
-    const result = await adminMutate<AdminProblem>(token, '/problems', 'POST', { ...problem, timeLimit: Number(problem.timeLimit), memoryLimit: Number(problem.memoryLimit) })
+    const result = await adminMutate<AdminProblem>(token, '/problems', 'POST', { ...problem, timeLimit: Number(problem.timeLimit), memoryLimit: Number(problem.memoryLimit), points: Number(problem.points) })
     if (!result.response.ok) return notify({ kind: 'error', text: 'Could not create problem.' })
-    setProblem({ title: '', description: '', inputFormat: '', outputFormat: '', constraints: '', difficulty: 'MEDIUM', timeLimit: '1000', memoryLimit: '256', roundId: '' }); notify({ kind: 'success', text: 'Problem created.' }); void load()
+    setProblem({ title: '', description: '', inputFormat: '', outputFormat: '', constraints: '', difficulty: 'MEDIUM', timeLimit: '1000', memoryLimit: '256', points: '100', roundId: '' }); notify({ kind: 'success', text: 'Problem created.' }); void load()
   }
 
   async function roundAction(id: string, action: 'reset') {
@@ -132,19 +138,50 @@ function ContestSetup({ token, notify }: { token: string; notify: (message: Mess
     notify({ kind: 'success', text: 'Problem duplicated.' }); void load()
   }
 
-  return <div className="admin-grid two-columns"><AdminSection title="Rounds" icon={<Gavel size={16} />}><form className="stack-form" onSubmit={createRound}><input placeholder="Round name" value={roundName} onChange={(event) => setRoundName(event.target.value)} required /><input type="number" min="1" placeholder="Duration in minutes" value={duration} onChange={(event) => setDuration(event.target.value)} required /><button className="gold-button" type="submit"><Plus size={14} /> Create round</button></form><div className="admin-table">{loading ? <p>Loading contest setup...</p> : rounds.map((round) => <div className="admin-row" key={round.id}><div><strong>{round.name}</strong><small>{round.duration} minutes · {round.status}</small></div><button className="mini-button" onClick={() => void roundAction(round.id, 'reset')}><RefreshCw size={13} /> Reset</button></div>)}</div></AdminSection><AdminSection title="Problems" icon={<Database size={16} />}><form className="stack-form" onSubmit={createProblem}><input placeholder="Problem title" value={problem.title} onChange={(event) => setProblem({ ...problem, title: event.target.value })} required /><select value={problem.roundId} onChange={(event) => setProblem({ ...problem, roundId: event.target.value })} required><option value="">Attach to round</option>{rounds.map((round) => <option value={round.id} key={round.id}>{round.name}</option>)}</select><textarea placeholder="Description" value={problem.description} onChange={(event) => setProblem({ ...problem, description: event.target.value })} required /><div className="form-pair"><input placeholder="Input format" value={problem.inputFormat} onChange={(event) => setProblem({ ...problem, inputFormat: event.target.value })} required /><input placeholder="Output format" value={problem.outputFormat} onChange={(event) => setProblem({ ...problem, outputFormat: event.target.value })} required /></div><div className="form-pair"><input placeholder="Time limit (ms)" value={problem.timeLimit} onChange={(event) => setProblem({ ...problem, timeLimit: event.target.value })} required /><input placeholder="Memory limit (MB)" value={problem.memoryLimit} onChange={(event) => setProblem({ ...problem, memoryLimit: event.target.value })} required /></div><button className="gold-button" type="submit"><Plus size={14} /> Create problem</button></form><div className="admin-table">{problems.map((item) => <div className="admin-row" key={item.id}><div><strong>{item.title}</strong><small>{item.difficulty} · {item.round?.name || 'No round'}</small></div><button className="mini-button danger" onClick={() => void deleteProblem(item.id)}><Trash2 size={13} /> Delete</button></div>)}</div><div className="advanced-tools"><div className="form-kicker">PROBLEM DATA TOOLS</div><select value={problemId} onChange={(event) => setProblemId(event.target.value)}><option value="">Select problem</option>{problems.map((item) => <option value={item.id} key={item.id}>{item.title}</option>)}</select><form className="stack-form" onSubmit={(event) => void duplicateProblem(event)}><button className="mini-button" type="submit" disabled={!problemId}><Database size={13} /> Duplicate selected</button></form><form className="stack-form" onSubmit={(event) => void addProblemData('test-cases', event)}><input placeholder="Test input" value={testCase.input} onChange={(event) => setTestCase({ ...testCase, input: event.target.value })} required /><input placeholder="Expected output" value={testCase.output} onChange={(event) => setTestCase({ ...testCase, output: event.target.value })} required /><button className="mini-button" type="submit" disabled={!problemId}><Plus size={13} /> Add test case</button></form><form className="stack-form" onSubmit={(event) => void addProblemData('examples', event)}><input placeholder="Example input" value={example.input} onChange={(event) => setExample({ ...example, input: event.target.value })} required /><input placeholder="Example output" value={example.output} onChange={(event) => setExample({ ...example, output: event.target.value })} required /><input placeholder="Explanation (optional)" value={example.explanation} onChange={(event) => setExample({ ...example, explanation: event.target.value })} /><button className="mini-button" type="submit" disabled={!problemId}><Plus size={13} /> Add example</button></form></div></AdminSection></div>
+  return <div className="admin-grid two-columns">
+    <AdminSection title="Competition rounds" icon={<Gavel size={16} />}>
+      <form className="stack-form" onSubmit={createRound}>
+        <select value={roundType} onChange={(event) => setRoundType(event.target.value as 'CODE_RUN' | 'CODE_IN_DARK')}>
+          <option value="CODE_RUN" disabled={rounds.some((round) => round.roundType === 'CODE_RUN')}>Code Run{rounds.some((round) => round.roundType === 'CODE_RUN') ? ' (created)' : ''}</option>
+          <option value="CODE_IN_DARK" disabled={rounds.some((round) => round.roundType === 'CODE_IN_DARK')}>Code in the Dark{rounds.some((round) => round.roundType === 'CODE_IN_DARK') ? ' (created)' : ''}</option>
+        </select>
+        <input type="number" min="1" max="360" placeholder="Coding duration (minutes)" value={duration} onChange={(event) => setDuration(event.target.value)} required />
+        {roundType === 'CODE_IN_DARK' && <input type="number" min="30" max="600" placeholder="Reading period (seconds)" value={readingPeriodSeconds} onChange={(event) => setReadingPeriodSeconds(event.target.value)} required />}
+        <button className="gold-button" type="submit" disabled={rounds.some((round) => round.roundType === roundType)}><Plus size={14} /> Create round</button>
+      </form>
+      <div className="admin-table">{loading ? <p>Loading contest setup...</p> : rounds.map((round) => <div className="admin-row" key={round.id}><div><strong>{round.name}</strong><small>{round.duration} min{round.roundType === 'CODE_IN_DARK' ? ` · ${round.readingPeriodSeconds}s reading` : ''} · ${round.status} · {round.problems?.[0] ? `${round.problems[0].points} pts · ${round.problems[0].testCaseCount || 0} test cases` : 'Question required'}</small></div><button className="mini-button" onClick={() => void roundAction(round.id, 'reset')}><RefreshCw size={13} /> Reset</button></div>)}</div>
+    </AdminSection>
+    <AdminSection title="Questions and scoring" icon={<Database size={16} />}>
+      <form className="stack-form" onSubmit={createProblem}>
+        <input placeholder="Question title" value={problem.title} onChange={(event) => setProblem({ ...problem, title: event.target.value })} required />
+        <select value={problem.roundId} onChange={(event) => setProblem({ ...problem, roundId: event.target.value })} required><option value="">Attach to pending round</option>{rounds.filter((round) => round.status === 'PENDING').map((round) => <option value={round.id} key={round.id}>{round.name}</option>)}</select>
+        <input type="number" min="1" max="10000" placeholder="Points for full solution" value={problem.points} onChange={(event) => setProblem({ ...problem, points: event.target.value })} required />
+        <textarea placeholder="Description" value={problem.description} onChange={(event) => setProblem({ ...problem, description: event.target.value })} required />
+        <div className="form-pair"><input placeholder="Input format" value={problem.inputFormat} onChange={(event) => setProblem({ ...problem, inputFormat: event.target.value })} required /><input placeholder="Output format" value={problem.outputFormat} onChange={(event) => setProblem({ ...problem, outputFormat: event.target.value })} required /></div>
+        <div className="form-pair"><input placeholder="Time limit (ms)" value={problem.timeLimit} onChange={(event) => setProblem({ ...problem, timeLimit: event.target.value })} required /><input placeholder="Memory limit (MB)" value={problem.memoryLimit} onChange={(event) => setProblem({ ...problem, memoryLimit: event.target.value })} required /></div>
+        <button className="gold-button" type="submit"><Plus size={14} /> Create question</button>
+      </form>
+      <div className="admin-table">{problems.map((item) => <div className="admin-row" key={item.id}><div><strong>{item.title}</strong><small>{item.points} pts · {item.difficulty} · {item.round?.name || 'No round'}</small></div><button className="mini-button danger" onClick={() => void deleteProblem(item.id)}><Trash2 size={13} /> Delete</button></div>)}</div>
+      <div className="advanced-tools"><div className="form-kicker">QUESTION DATA</div><select value={problemId} onChange={(event) => setProblemId(event.target.value)}><option value="">Select question</option>{problems.map((item) => <option value={item.id} key={item.id}>{item.title}</option>)}</select>
+        <form className="stack-form" onSubmit={(event) => void duplicateProblem(event)}><button className="mini-button" type="submit" disabled={!problemId}><Database size={13} /> Duplicate selected</button></form>
+        <form className="stack-form" onSubmit={(event) => void addProblemData('test-cases', event)}><input placeholder="Test input" value={testCase.input} onChange={(event) => setTestCase({ ...testCase, input: event.target.value })} required /><input placeholder="Expected output" value={testCase.output} onChange={(event) => setTestCase({ ...testCase, output: event.target.value })} required /><button className="mini-button" type="submit" disabled={!problemId}><Plus size={13} /> Add test case</button></form>
+        <form className="stack-form" onSubmit={(event) => void addProblemData('examples', event)}><input placeholder="Example input" value={example.input} onChange={(event) => setExample({ ...example, input: event.target.value })} required /><input placeholder="Example output" value={example.output} onChange={(event) => setExample({ ...example, output: event.target.value })} required /><input placeholder="Explanation (optional)" value={example.explanation} onChange={(event) => setExample({ ...example, explanation: event.target.value })} /><button className="mini-button" type="submit" disabled={!problemId}><Plus size={13} /> Add example</button></form>
+      </div>
+    </AdminSection>
+  </div>
 }
 
 function ReviewDesk({ token, notify }: { token: string; notify: (message: Message) => void }) {
   const [submissions, setSubmissions] = useState<AdminSubmission[]>([])
   const [evaluations, setEvaluations] = useState<AdminEvaluation[]>([])
+  const [leaderboard, setLeaderboard] = useState<LeaderboardEntry[]>([])
   const [participantId, setParticipantId] = useState('')
   const [adjustmentId, setAdjustmentId] = useState('')
-  const [scores, setScores] = useState({ round1Score: '0', round2Score: '0', manualAdjustments: '0', reason: '' })
+  const [scores, setScores] = useState({ manualAdjustments: '0', reason: '' })
 
   async function load() {
-    const [submissionResult, evaluationResult] = await Promise.all([adminFetch<AdminSubmission[]>(token, '/submissions'), adminFetch<AdminEvaluation[]>(token, '/evaluations')])
-    setSubmissions(submissionResult.data || []); setEvaluations(evaluationResult.data || [])
+    const [submissionResult, evaluationResult, leaderboardResult] = await Promise.all([adminFetch<AdminSubmission[]>(token, '/submissions'), adminFetch<AdminEvaluation[]>(token, '/evaluations'), getLeaderboard()])
+    setSubmissions(submissionResult.data || []); setEvaluations(evaluationResult.data || []); setLeaderboard(leaderboardResult)
   }
   useEffect(() => { void load() }, [token])
 
@@ -168,7 +205,19 @@ function ReviewDesk({ token, notify }: { token: string; notify: (message: Messag
     setAdjustmentId(''); notify({ kind: 'success', text: 'Score adjustment reversed.' }); void load()
   }
 
-  return <div className="admin-grid two-columns"><AdminSection title="Submission review" icon={<ClipboardList size={16} />}><div className="admin-table compact-table">{submissions.slice(0, 20).map((submission) => <div className="admin-row" key={submission.id}><div><strong>{submission.participant.name}</strong><small>{submission.problem.title} · {submission.language}</small></div><b>{submission.status}</b><button className="mini-button" onClick={() => navigator.clipboard?.writeText(submission.sourceCode)}>Copy code</button></div>)}{!submissions.length && <p className="empty-roster">No submissions available.</p>}</div></AdminSection><AdminSection title="Evaluation and scoring" icon={<ShieldCheck size={16} />}><form className="stack-form" onSubmit={adjustScore}><input placeholder="Participant ID" value={participantId} onChange={(event) => setParticipantId(event.target.value)} required /><div className="form-pair"><input type="number" placeholder="Round 1" value={scores.round1Score} onChange={(event) => setScores({ ...scores, round1Score: event.target.value })} /><input type="number" placeholder="Round 2" value={scores.round2Score} onChange={(event) => setScores({ ...scores, round2Score: event.target.value })} /></div><input type="number" placeholder="Manual adjustment" value={scores.manualAdjustments} onChange={(event) => setScores({ ...scores, manualAdjustments: event.target.value })} /><input placeholder="Reason" value={scores.reason} onChange={(event) => setScores({ ...scores, reason: event.target.value })} required /><button className="gold-button" type="submit"><Plus size={14} /> Adjust score</button></form><form className="inline-form" onSubmit={reverseScore}><input placeholder="Adjustment ID to reverse" value={adjustmentId} onChange={(event) => setAdjustmentId(event.target.value)} required /><button className="mini-button danger" type="submit"><RefreshCw size={13} /> Reverse</button></form><div className="admin-table">{evaluations.map((evaluation) => <div className="admin-row" key={evaluation.id}><div><strong>{evaluation.participant.name}</strong><small>Final score: {evaluation.finalScore} · {evaluation.lockedAt ? 'Locked' : 'Open'}</small></div><button className="mini-button" onClick={() => void lockEvaluation(evaluation.id, !evaluation.lockedAt)}>{evaluation.lockedAt ? <Unlock size={13} /> : <ShieldCheck size={13} />}{evaluation.lockedAt ? 'Unlock' : 'Lock'}</button></div>)}</div></AdminSection></div>
+  return <div className="admin-grid two-columns">
+    <AdminSection title="Submission review" icon={<ClipboardList size={16} />}>
+      <div className="admin-table compact-table">{submissions.slice(0, 20).map((submission) => <div className="admin-row" key={submission.id}><div><strong>{submission.participant.name}</strong><small>{submission.problem.title} · {submission.language}</small><small>Compile {submission.compilationTime == null ? 'N/A' : `${submission.compilationTime} ms`} · Run {submission.executionTime == null ? 'N/A' : `${submission.executionTime} ms`}</small></div><b>{submission.status}</b><button className="mini-button" onClick={() => navigator.clipboard?.writeText(submission.sourceCode)}>Copy code</button></div>)}{!submissions.length && <p className="empty-roster">No submissions available.</p>}</div>
+    </AdminSection>
+    <AdminSection title="Evaluation and scoring" icon={<ShieldCheck size={16} />}>
+      <form className="stack-form" onSubmit={adjustScore}><input placeholder="Participant ID" value={participantId} onChange={(event) => setParticipantId(event.target.value)} required /><input type="number" min="-500" max="500" placeholder="Manual adjustment (-500 to 500)" value={scores.manualAdjustments} onChange={(event) => setScores({ ...scores, manualAdjustments: event.target.value })} /><input placeholder="Reason" value={scores.reason} onChange={(event) => setScores({ ...scores, reason: event.target.value })} required /><button className="gold-button" type="submit"><Plus size={14} /> Adjust total</button></form>
+      <form className="inline-form" onSubmit={reverseScore}><input placeholder="Adjustment ID to reverse" value={adjustmentId} onChange={(event) => setAdjustmentId(event.target.value)} required /><button className="mini-button danger" type="submit"><RefreshCw size={13} /> Reverse</button></form>
+      <div className="admin-table">{evaluations.map((evaluation) => <div className="admin-row" key={evaluation.id}><div><strong>{evaluation.participant.name}</strong><small>Code Run {evaluation.round1Score} · Code in the Dark {evaluation.round2Score}</small><small>Total {evaluation.finalScore} · Tie-break {evaluation.tieBreakTimeMs} ms · {evaluation.lockedAt ? 'Locked' : 'Open'}</small></div><button className="mini-button" onClick={() => void lockEvaluation(evaluation.id, !evaluation.lockedAt)}>{evaluation.lockedAt ? <Unlock size={13} /> : <ShieldCheck size={13} />}{evaluation.lockedAt ? 'Unlock' : 'Lock'}</button></div>)}</div>
+    </AdminSection>
+    <AdminSection title="Leaderboard" icon={<ShieldCheck size={16} />}>
+      <div className="admin-table compact-table">{leaderboard.map((entry) => <div className="admin-row" key={entry.participantId}><div><strong>#{entry.rank} {entry.name}</strong><small>Code Run {entry.round1Score} · Code in the Dark {entry.round2Score}</small><small>{entry.college || 'College not provided'} · {entry.tieBreakTimeMs} ms</small></div><b>{entry.finalScore} PTS</b></div>)}{!leaderboard.length && <p className="empty-roster">No scored participants yet.</p>}</div>
+    </AdminSection>
+  </div>
 }
 
 function SystemDesk({ token, notify }: { token: string; notify: (message: Message) => void }) {

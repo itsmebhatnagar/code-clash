@@ -14,10 +14,10 @@ export function createScoreRoutes() {
   const router = Router();
 
   router.post('/adjust', asyncHandler(async (req: any, res) => {
-    const { participantId, round1Score, round2Score, manualAdjustments, judgeComments, reason } = req.body;
+    const { participantId, manualAdjustments, judgeComments, reason } = req.body;
     const evaluation = await adjustScore(
       participantId,
-      { round1Score, round2Score, manualAdjustments, judgeComments, reason },
+      { manualAdjustments, judgeComments, reason },
       req.user.id
     );
     res.json(evaluation);

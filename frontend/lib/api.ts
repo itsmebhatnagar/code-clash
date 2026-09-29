@@ -1,4 +1,4 @@
-import type { AdminMetrics, Assignment, Participant, ParticipantDashboard, SubmissionResult, User } from './types'
+import type { AdminMetrics, Assignment, LeaderboardEntry, Participant, ParticipantDashboard, SubmissionResult, User } from './types'
 
 export const API_URL = 'http://localhost:5000/api'
 
@@ -36,6 +36,13 @@ export async function getParticipants(token: string) {
 export async function getAdminMetrics(token: string) {
   const response = await fetch(`${API_URL}/admin/metrics`, { headers: authHeaders(token) })
   return response.ok ? await response.json() as AdminMetrics : { totalParticipants: 0, registered: 0, checkedIn: 0, active: 0, completed: 0, disqualified: 0, connected: 0, inContest: 0, submitted: 0, acceptedSolutions: 0, disconnected: 0, currentRound: null, currentRoundId: null, liveContestStatus: 'UNKNOWN', countdownSeconds: 0 }
+}
+
+export async function getLeaderboard() {
+  const response = await fetch(`${API_URL}/leaderboard`)
+  if (!response.ok) return []
+  const data = await response.json() as { leaderboard?: LeaderboardEntry[] }
+  return data.leaderboard ?? []
 }
 
 export async function adminFetch<T>(token: string, path: string) {

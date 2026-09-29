@@ -185,6 +185,10 @@ input:focus { border-color: var(--gold); box-shadow: 0 0 0 1px var(--gold); }
 .participant-workspace { margin-top: 9px; overflow: hidden; border: 1px solid #344250; border-radius: 4px; background: #080f18; }
 .workspace-title { display: flex; align-items: center; justify-content: space-between; min-height: 31px; padding: 0 12px; border-bottom: 1px solid #26333f; color: var(--ink); font: 9px 'Courier New', monospace; }
 .workspace-title > div { display: flex; align-items: center; gap: 10px; }
+.workspace-title select { min-width: 0; max-width: min(44vw, 260px); padding: 4px 6px; border: 1px solid #344250; background: #0b121b; color: var(--ink); font: 8px 'Courier New', monospace; }
+.workspace-body .problem-panel[hidden] { display: none; }
+.blind-screen-overlay { position: fixed; z-index: 9999; inset: 0; background: #000; pointer-events: none; }
+.blind-submit-hint { display: block; padding: 8px 10px; color: #000; }
 .workspace-title small { color: var(--muted); font-size: 8px; }
 .workspace-action { padding: 6px 13px; border: 1px solid var(--gold); border-radius: 3px; background: var(--gold); color: #0d1115; font: 700 8px 'Courier New', monospace; }
 .workspace-body { display: grid; grid-template-columns: 1fr 1.35fr; min-height: 360px; }

@@ -13,7 +13,11 @@ router.get('/', asyncHandler(async (_req, res) => {
     where: {
       participant: { status: { not: 'DISQUALIFIED' } }
     },
-    orderBy: { finalScore: 'desc' }
+    orderBy: [
+      { finalScore: 'desc' },
+      { tieBreakTimeMs: 'asc' },
+      { participantId: 'asc' },
+    ]
   });
 
   const rankedBoard = evaluations.map((evalRecord, index) => ({
@@ -23,6 +27,7 @@ router.get('/', asyncHandler(async (_req, res) => {
     college: evalRecord.participant.college,
     round1Score: evalRecord.round1Score,
     round2Score: evalRecord.round2Score,
+    tieBreakTimeMs: evalRecord.tieBreakTimeMs,
     manualAdjustments: evalRecord.manualAdjustments,
     finalScore: evalRecord.finalScore,
     status: evalRecord.participant.status

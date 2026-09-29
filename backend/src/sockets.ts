@@ -4,6 +4,7 @@ import { prisma } from './db';
 import { getAdminMetrics, markParticipantConnected, markParticipantDisconnected } from './presence';
 import { recordAuditLog } from './audit';
 import { trackSessionConnection, trackSessionDisconnection, updateSessionActivity } from './antiCheat';
+import { getRoundEndDelayMs } from './services/contestService';
 
 const JWT_SECRET = process.env.JWT_SECRET;
 const roundTimers = new Map<string, NodeJS.Timeout>();
@@ -64,12 +65,18 @@ export const setupSockets = (io: Server) => {
         try {
           await assertCurrentAdmin(user.id);
           const round = await prisma.$transaction(async (transaction) => {
-            const target = await transaction.round.findUnique({ where: { id: data.roundId } });
+            const target = await transaction.round.findUnique({
+              where: { id: data.roundId },
+              include: { problems: { select: { id: true, testCases: { select: { id: true } } } } },
+            });
             if (!target) throw new Error('ROUND_NOT_FOUND');
             if (target.status !== 'PENDING') throw new Error('ROUND_CANNOT_START');
+            if (target.problems.length !== 1 || target.problems[0].testCases.length === 0) throw new Error('ROUND_NOT_READY');
 
             const activeRound = await transaction.round.findFirst({ where: { status: 'ACTIVE' } });
             if (activeRound) throw new Error('ANOTHER_ROUND_ACTIVE');
+
+            if (target.roundType === 'CODE_IN_DARK' && target.readingPeriodSeconds < 30) throw new Error('ROUND_READING_PERIOD_INVALID');
 
             return transaction.round.update({
               where: { id: target.id },
@@ -81,10 +88,12 @@ export const setupSockets = (io: Server) => {
             roundId: round.id, 
             status: 'ACTIVE', 
             startTime: round.startTime,
-            duration: round.duration
+            duration: round.duration,
+            roundType: round.roundType,
+            readingPeriodSeconds: round.readingPeriodSeconds,
           });
           await recordAuditLog(user.id, 'ROUND_START', `Round ${round.id} (${round.name}) started`);
-          scheduleRoundEnd(io, round.id, round.duration * 60_000);
+          scheduleRoundEnd(io, round.id, getRoundEndDelayMs(round.duration, round.readingPeriodSeconds));
         } catch (error) {
           socket.emit('ERROR', { message: roundErrorMessage(error, 'Failed to start round') });
         }
@@ -107,8 +116,8 @@ export const setupSockets = (io: Server) => {
           await assertCurrentAdmin(user.id);
           const round = await transitionRound(data.roundId, 'PAUSED', 'ACTIVE');
           const elapsed = round.startTime ? Date.now() - round.startTime.getTime() : 0;
-          scheduleRoundEnd(io, round.id, Math.max(round.duration * 60_000 - elapsed, 1_000));
-          io.emit('ROUND_STATE_UPDATE', { roundId: round.id, status: 'ACTIVE', startTime: round.startTime, duration: round.duration });
+          scheduleRoundEnd(io, round.id, Math.max(getRoundEndDelayMs(round.duration, round.readingPeriodSeconds) - elapsed, 1_000));
+          io.emit('ROUND_STATE_UPDATE', { roundId: round.id, status: 'ACTIVE', startTime: round.startTime, duration: round.duration, roundType: round.roundType, readingPeriodSeconds: round.readingPeriodSeconds });
           await recordAuditLog(user.id, 'ROUND_START', `Round ${round.id} (${round.name}) resumed`);
         } catch (error) {
           socket.emit('ERROR', { message: roundErrorMessage(error, 'Failed to resume round') });
@@ -145,10 +154,10 @@ export const setupSockets = (io: Server) => {
 };
 
 async function restoreActiveRoundTimers(io: Server) {
-  const activeRounds = await prisma.round.findMany({ where: { status: 'ACTIVE' }, select: { id: true, startTime: true, duration: true } });
+  const activeRounds = await prisma.round.findMany({ where: { status: 'ACTIVE' }, select: { id: true, startTime: true, duration: true, readingPeriodSeconds: true } });
   for (const round of activeRounds) {
     const elapsed = round.startTime ? Date.now() - round.startTime.getTime() : 0;
-    scheduleRoundEnd(io, round.id, Math.max(round.duration * 60_000 - elapsed, 1_000));
+    scheduleRoundEnd(io, round.id, Math.max(getRoundEndDelayMs(round.duration, round.readingPeriodSeconds) - elapsed, 1_000));
   }
 }
 
@@ -205,7 +214,9 @@ function roundErrorMessage(error: unknown, fallback: string) {
     ADMIN_NOT_AUTHORIZED: 'Admin authorization is no longer valid',
     ROUND_NOT_FOUND: 'Round does not exist',
     ROUND_CANNOT_START: 'Only a pending round can be started',
+    ROUND_NOT_READY: 'Add one question and at least one test case before starting the round',
     ANOTHER_ROUND_ACTIVE: 'Another round is already active',
+    ROUND_READING_PERIOD_INVALID: 'Configure a valid reading period before starting Code in the Dark',
     ROUND_INVALID_TRANSITION: 'Round cannot transition from its current state'
   };
   return messages[code] || fallback;

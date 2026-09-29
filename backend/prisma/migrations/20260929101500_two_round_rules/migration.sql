@@ -1,0 +1,7 @@
+ALTER TABLE "Round" ADD COLUMN "roundType" TEXT NOT NULL DEFAULT 'CODE_RUN';
+ALTER TABLE "Round" ADD COLUMN "readingPeriodSeconds" INTEGER NOT NULL DEFAULT 0;
+UPDATE "Round" SET "roundType" = 'CODE_IN_DARK'
+WHERE lower("name") LIKE '%dark%' OR lower("name") LIKE '%round 2%';
+
+ALTER TABLE "Problem" ADD COLUMN "points" INTEGER NOT NULL DEFAULT 100;
+ALTER TABLE "Evaluation" ADD COLUMN "tieBreakTimeMs" INTEGER NOT NULL DEFAULT 0;

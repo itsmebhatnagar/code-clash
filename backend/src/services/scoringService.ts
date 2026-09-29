@@ -11,23 +11,80 @@ export interface JudgeEvaluationInput {
 }
 
 export interface AdjustScoreInput {
-  round1Score?: number;
-  round2Score?: number;
   manualAdjustments?: number;
   judgeComments?: string;
   reason?: string;
 }
 
-const ROUND_SCORE_MIN   = 0;
-const ROUND_SCORE_MAX   = 500;
 const MANUAL_ADJ_MIN    = -500;
 const MANUAL_ADJ_MAX    = 500;
 const QUALITY_MIN       = 0;
 const QUALITY_MAX       = 100;
+const MAX_ROUND_SCORE   = 10_000;
+const MAX_TIE_BREAK_MS  = 2_147_483_647;
 
-function assertRoundScore(value: number, label: string) {
-  if (!Number.isFinite(value) || value < ROUND_SCORE_MIN || value > ROUND_SCORE_MAX) {
-    throw new AppError(400, `${label} must be between ${ROUND_SCORE_MIN} and ${ROUND_SCORE_MAX}`);
+export function calculateProblemPoints(points: number, status: string, passedCases: number, totalCases: number) {
+  if (status === 'ACCEPTED') return points;
+  if (status !== 'PARTIAL' || totalCases <= 0) return 0;
+  return Math.floor(points * Math.max(0, Math.min(passedCases, totalCases)) / totalCases);
+}
+
+export async function recordSubmissionScore(submissionId: string) {
+  const submission = await prisma.submission.findUnique({
+    where: { id: submissionId },
+    include: { problem: { select: { id: true, points: true, roundId: true, round: { select: { roundType: true, startTime: true } } } } },
+  });
+  const scoredStatuses = ['ACCEPTED', 'PARTIAL', 'WRONG_ANSWER', 'COMPILE_ERROR', 'RUNTIME_ERROR', 'TIME_LIMIT_EXCEEDED', 'OUTPUT_LIMIT_EXCEEDED'];
+  if (!submission || !scoredStatuses.includes(submission.status)) return;
+
+  const roundType = submission.problem.round.roundType;
+  if (roundType !== 'CODE_RUN' && roundType !== 'CODE_IN_DARK') return;
+
+  const attempts = await prisma.submission.findMany({
+    where: {
+      participantId: submission.participantId,
+      problem: { round: { roundType: { in: ['CODE_RUN', 'CODE_IN_DARK'] } } },
+      status: { in: scoredStatuses },
+    },
+    include: { problem: { select: { id: true, points: true, round: { select: { roundType: true, startTime: true, readingPeriodSeconds: true } } } } },
+    orderBy: { createdAt: 'asc' },
+  });
+  const bestByProblem = new Map<string, { points: number; submissionTimeMs: number; roundType: string }>();
+  for (const attempt of attempts) {
+    const points = calculateProblemPoints(attempt.problem.points, attempt.status, attempt.passedCases, attempt.totalCases);
+    if (points === 0) continue;
+    const roundStart = attempt.problem.round.startTime?.getTime();
+    const startedAt = roundStart === undefined
+      ? undefined
+      : roundStart + (attempt.problem.round.roundType === 'CODE_IN_DARK' ? attempt.problem.round.readingPeriodSeconds * 1000 : 0);
+    const submissionTimeMs = startedAt === undefined
+      ? MAX_TIE_BREAK_MS
+      : Math.max(0, attempt.createdAt.getTime() - startedAt);
+    const existing = bestByProblem.get(attempt.problemId);
+    if (!existing || points > existing.points || (points === existing.points && submissionTimeMs < existing.submissionTimeMs)) {
+      bestByProblem.set(attempt.problemId, { points, submissionTimeMs, roundType: attempt.problem.round.roundType });
+    }
+  }
+
+  const bestResults = [...bestByProblem.values()];
+  const round1Score = bestResults.filter((result) => result.roundType === 'CODE_RUN').reduce((sum, result) => sum + result.points, 0);
+  const round2Score = bestResults.filter((result) => result.roundType === 'CODE_IN_DARK').reduce((sum, result) => sum + result.points, 0);
+  const tieBreakTimeMs = bestResults.reduce((sum, result) => sum + result.submissionTimeMs, 0);
+  const existingEvaluation = await prisma.evaluation.findUnique({ where: { participantId: submission.participantId } });
+  if (existingEvaluation?.lockedAt) return;
+
+  const roundScores = { round1Score, round2Score };
+  const finalScore = round1Score + round2Score + (existingEvaluation?.manualAdjustments ?? 0);
+  const evaluation = await prisma.evaluation.upsert({
+    where: { participantId: submission.participantId },
+    create: { participantId: submission.participantId, ...roundScores, tieBreakTimeMs, finalScore },
+    update: { ...roundScores, tieBreakTimeMs, finalScore },
+  });
+
+  try {
+    await syncLeaderboardScore(evaluation.participantId, evaluation.finalScore);
+  } catch (error) {
+    console.error('Could not sync automatic score to Redis leaderboard:', error);
   }
 }
 
@@ -87,14 +144,19 @@ export async function updateJudgeEvaluation(
     throw new AppError(409, 'Evaluation is locked');
   }
 
+  const finalScore = (existing?.round1Score ?? 0)
+    + (existing?.round2Score ?? 0)
+    + (existing?.manualAdjustments ?? 0);
+
   const evaluation = await prisma.evaluation.upsert({
     where: { participantId },
-    update: { codeQuality: quality, logicClarity: clarity, judgeComments: input.judgeComments },
+    update: { codeQuality: quality, logicClarity: clarity, judgeComments: input.judgeComments, finalScore },
     create: {
       participantId,
       codeQuality: quality,
       logicClarity: clarity,
       judgeComments: input.judgeComments,
+      finalScore,
     },
   });
 
@@ -125,18 +187,12 @@ export async function adjustScore(
     throw new AppError(409, 'Evaluation is locked');
   }
 
-  const r1 = input.round1Score !== undefined
-    ? Number(input.round1Score)
-    : (existingEvaluation?.round1Score ?? 0);
-  const r2 = input.round2Score !== undefined
-    ? Number(input.round2Score)
-    : (existingEvaluation?.round2Score ?? 0);
+  const r1 = existingEvaluation?.round1Score ?? 0;
+  const r2 = existingEvaluation?.round2Score ?? 0;
   const manual = input.manualAdjustments !== undefined
     ? Number(input.manualAdjustments)
     : (existingEvaluation?.manualAdjustments ?? 0);
 
-  assertRoundScore(r1, 'round1Score');
-  assertRoundScore(r2, 'round2Score');
   assertManualAdjustment(manual);
 
   const finalScore = r1 + r2 + manual;
@@ -237,7 +293,7 @@ export async function reverseScoreAdjustment(adjustmentId: string, adminId: stri
         newR1     = latest.round1Score;
         newR2     = latest.round2Score;
         newManual = latest.manualAdjustments;
-        newFinal  = latest.finalScore;
+        newFinal  = newR1 + newR2 + newManual;
       } else {
         const deltaR1     = adjustment.round1Score       - (adjustment.previousRound1Score       ?? 0);
         const deltaR2     = adjustment.round2Score       - (adjustment.previousRound2Score       ?? 0);
@@ -252,13 +308,12 @@ export async function reverseScoreAdjustment(adjustmentId: string, adminId: stri
       newR1     = adjustment.previousRound1Score;
       newR2     = adjustment.previousRound2Score      ?? 0;
       newManual = adjustment.previousManualAdjustments ?? 0;
-      newFinal  = adjustment.previousFinalScore
-        ?? (newR1 + newR2 + newManual);
+      newFinal  = newR1 + newR2 + newManual;
     } else {
       newR1     = existingEvaluation?.round1Score  ?? 0;
       newR2     = existingEvaluation?.round2Score  ?? 0;
       newManual = 0;
-      newFinal  = newR1 + newR2;
+      newFinal  = newR1 + newR2 + newManual;
     }
 
     const evaluation = await tx.evaluation.update({

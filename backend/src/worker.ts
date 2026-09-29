@@ -1,10 +1,8 @@
+import 'dotenv/config';
 import { Worker } from 'bullmq';
 import { connection } from './redis';
 import { judgeSubmission, InfraError } from './judgeWorker';
 import { SUBMISSIONS_QUEUE } from './queue';
-import dotenv from 'dotenv';
-
-dotenv.config();
 
 console.log(`Starting Judge Worker process for queue: ${SUBMISSIONS_QUEUE}...`);
 console.log(`Requires Docker Sandbox: ${process.env.NODE_ENV === 'production' || process.env.JUDGE_REQUIRE_SANDBOX === 'true'}`);

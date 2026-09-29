@@ -16,6 +16,7 @@ describe('normalizeLanguage', () => {
   });
 
   test('recognises cpp aliases', () => {
+    assert.equal(normalizeLanguage('C'), 'c');
     assert.equal(normalizeLanguage('cpp'), 'cpp');
     assert.equal(normalizeLanguage('c++'), 'cpp');
     assert.equal(normalizeLanguage('C++'), 'cpp');
@@ -100,6 +101,8 @@ describe('judgeSubmission – verdicts', async () => {
     });
     assert.equal(result.status, 'ACCEPTED');
     assert.equal(result.passedCases, 1);
+    assert.equal(result.compilationTime, null);
+    assert.equal(typeof result.executionTime, 'number');
   });
 
   test('WRONG_ANSWER – incorrect output', async () => {

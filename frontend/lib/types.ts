@@ -22,17 +22,19 @@ export type Participant = {
 export type AdminRound = {
   id: string
   name: string
+  roundType: 'CODE_RUN' | 'CODE_IN_DARK'
   duration: number
+  readingPeriodSeconds: number
   status: string
-  lateEntryCutoffMinutes: number
   autoSubmitOnEnd: boolean
   startTime?: string | null
   endTime?: string | null
-  problems?: Array<{ id: string; title: string }>
+  problems?: Array<{ id: string; title: string; points?: number; testCaseCount?: number }>
 }
 
 export type AdminProblem = Problem & {
   roundId: string
+  points: number
   difficulty: string
   round?: AdminRound
   examples?: Array<{ id: string; input: string; output: string; explanation?: string | null }>
@@ -51,6 +53,8 @@ export type AdminSubmission = {
   status: string
   language: string
   sourceCode: string
+  compilationTime?: number | null
+  executionTime?: number | null
   passedCases: number
   totalCases: number
   createdAt: string
@@ -65,11 +69,25 @@ export type AdminEvaluation = {
   round2Score: number
   manualAdjustments: number
   finalScore: number
+  tieBreakTimeMs: number
   codeQuality: number
   logicClarity: number
   judgeComments?: string | null
   lockedAt?: string | null
   participant: { name: string; email: string }
+}
+
+export type LeaderboardEntry = {
+  rank: number
+  participantId: string
+  name: string
+  college: string | null
+  round1Score: number
+  round2Score: number
+  manualAdjustments: number
+  finalScore: number
+  tieBreakTimeMs: number
+  status: string
 }
 
 export type AdminAuditLog = { id: string; actionType: string; description: string; timestamp: string }
@@ -103,18 +121,28 @@ export type Problem = {
   constraints?: string
   timeLimit: number
   memoryLimit: number
+  points?: number
 }
 
-export type Assignment = { id: string; problems: Problem[] }
+export type Assignment = {
+  id: string
+  roundType: 'CODE_RUN' | 'CODE_IN_DARK'
+  phase: 'READING' | 'CODING'
+  readingEndsAt?: string | null
+  endsAt?: string | null
+  problems: Problem[]
+}
 export type ParticipantDashboard = {
   round: (Assignment & { name: string; duration: number; startTime?: string | null }) | null
   stats?: { solved: number; attempted: number; totalProblems: number; score: number; rank: number | null }
 }
 
 export type SubmissionResult = {
+  id?: string
   status: string
   passedCases: number
   totalCases: number
+  compilationTime?: number | null
   executionTime?: number
   error?: string
 }

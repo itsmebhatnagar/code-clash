@@ -25,6 +25,7 @@ export function AdminPanel({ user, token, onLogout }: { user: User; token: strin
     const roundId = metrics.currentRoundId || rounds.find((round) => round.status === 'PENDING' || round.status === 'PAUSED')?.id
     if (!roundId) return
     const socket = connectSocket(token)
+    socket.once('ERROR', (data: { message?: string }) => window.alert(data.message || 'Round action failed.'))
     const emitAction = () => socket.emit(action, { roundId })
     if (socket.connected) emitAction()
     else socket.once('connect', emitAction)

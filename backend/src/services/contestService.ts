@@ -92,7 +92,31 @@ export interface CreateProblemInput {
   difficulty: string;
   timeLimit: number;
   memoryLimit: number;
+  points?: number;
   roundId: string;
+}
+
+export const ROUND_TYPES = {
+  CODE_RUN: { name: 'Code Run', readingPeriodSeconds: 0 },
+  CODE_IN_DARK: { name: 'Code in the Dark', readingPeriodSeconds: 180 },
+} as const;
+
+export type RoundType = keyof typeof ROUND_TYPES;
+
+export function getRoundPhase(round: { roundType: string; readingPeriodSeconds: number; startTime: Date | null }, now = Date.now()) {
+  if (round.roundType === 'CODE_IN_DARK' && round.startTime
+    && now < round.startTime.getTime() + round.readingPeriodSeconds * 1000) return 'READING' as const;
+  return 'CODING' as const;
+}
+
+export function getRoundEndDelayMs(durationMinutes: number, readingPeriodSeconds: number) {
+  return durationMinutes * 60_000 + readingPeriodSeconds * 1000;
+}
+
+async function assertProblemEditable(problemId: string) {
+  const problem = await prisma.problem.findUnique({ where: { id: problemId }, select: { round: { select: { status: true } } } });
+  if (!problem) throw new AppError(404, 'Problem not found');
+  if (problem.round.status !== 'PENDING') throw new AppError(409, 'Questions can only be changed before their round starts');
 }
 
 export async function listProblems() {
@@ -112,7 +136,17 @@ export async function getProblemById(id: string) {
 }
 
 export async function createProblem(data: CreateProblemInput, adminId: string) {
-  const problem = await prisma.problem.create({ data });
+  const round = await prisma.round.findUnique({ where: { id: data.roundId }, select: { status: true, roundType: true, _count: { select: { problems: true } } } });
+  if (!round) throw new AppError(404, 'Round not found');
+  if (round.status !== 'PENDING') throw new AppError(409, 'Problems can only be added to pending rounds');
+  if (round._count.problems > 0) throw new AppError(409, 'Each contest round can have one question');
+
+  const points = Number(data.points ?? 100);
+  if (!Number.isInteger(points) || points < 1 || points > 10_000) {
+    throw new AppError(400, 'Problem points must be an integer between 1 and 10000');
+  }
+
+  const problem = await prisma.problem.create({ data: { ...data, points } });
   await recordAuditLog(
     adminId,
     'PROBLEM_CREATE',
@@ -122,6 +156,19 @@ export async function createProblem(data: CreateProblemInput, adminId: string) {
 }
 
 export async function updateProblem(id: string, data: Partial<CreateProblemInput>, adminId: string) {
+  await assertProblemEditable(id);
+  if (data.roundId) {
+    const targetRound = await prisma.round.findUnique({ where: { id: data.roundId }, select: { status: true } });
+    if (!targetRound) throw new AppError(404, 'Round not found');
+    if (targetRound.status !== 'PENDING') throw new AppError(409, 'Questions can only be attached to pending rounds');
+  }
+  if (data.points !== undefined) {
+    const points = Number(data.points);
+    if (!Number.isInteger(points) || points < 1 || points > 10_000) {
+      throw new AppError(400, 'Problem points must be an integer between 1 and 10000');
+    }
+    data.points = points;
+  }
   const problem = await prisma.problem.update({
     where: { id },
     data,
@@ -131,6 +178,7 @@ export async function updateProblem(id: string, data: Partial<CreateProblemInput
 }
 
 export async function deleteProblem(id: string, adminId: string) {
+  await assertProblemEditable(id);
   await prisma.problem.delete({ where: { id } });
   await recordAuditLog(adminId, 'PROBLEM_UPDATE', `Problem ${id} deleted`);
 }
@@ -141,6 +189,14 @@ export async function duplicateProblem(id: string, targetRoundId: string | undef
     include: { examples: true, testCases: true },
   });
   if (!source) throw new AppError(404, 'Problem not found');
+
+  const destinationRound = await prisma.round.findUnique({
+    where: { id: targetRoundId || source.roundId },
+    select: { status: true, _count: { select: { problems: true } } },
+  });
+  if (!destinationRound) throw new AppError(404, 'Round not found');
+  if (destinationRound.status !== 'PENDING') throw new AppError(409, 'Problems can only be duplicated into pending rounds');
+  if (destinationRound._count.problems > 0) throw new AppError(409, 'Each contest round can have one question');
 
   const copy = await prisma.problem.create({
     data: {
@@ -184,6 +240,7 @@ export async function addTestCase(
   output: string,
   isHidden: boolean = true
 ) {
+  await assertProblemEditable(problemId);
   if (input === undefined || output === undefined) {
     throw new AppError(400, 'Input and output are required');
   }
@@ -207,6 +264,7 @@ export async function addExample(
   output: string,
   explanation?: string
 ) {
+  await assertProblemEditable(problemId);
   if (input === undefined || output === undefined) {
     throw new AppError(400, 'Input and output are required');
   }
@@ -221,34 +279,51 @@ export async function addExample(
 }
 
 export interface CreateRoundInput {
-  name: string;
+  roundType: RoundType;
   duration: number;
-  lateEntryCutoffMinutes?: number;
+  readingPeriodSeconds?: number;
   autoSubmitOnEnd?: boolean;
 }
 
 export async function listRounds() {
-  return prisma.round.findMany({
+  const rounds = await prisma.round.findMany({
     include: {
       problems: {
-        select: { id: true, title: true },
+        select: { id: true, title: true, points: true, _count: { select: { testCases: true } } },
       },
     },
     orderBy: { name: 'asc' },
   });
+  return rounds
+    .map((round) => ({
+      ...round,
+      problems: round.problems.map(({ _count, ...problem }) => ({ ...problem, testCaseCount: _count.testCases })),
+    }))
+    .sort((first, second) => first.roundType.localeCompare(second.roundType) * -1);
 }
 
 export async function createRound(data: CreateRoundInput, adminId: string) {
-  const { name, duration, lateEntryCutoffMinutes = 10, autoSubmitOnEnd = true } = data;
-  if (!name || !Number.isFinite(Number(duration)) || Number(duration) <= 0) {
-    throw new AppError(400, 'Round name and positive duration are required');
+  const { roundType, duration, autoSubmitOnEnd = true } = data;
+  if (!Object.hasOwn(ROUND_TYPES, roundType) || !Number.isInteger(Number(duration)) || Number(duration) <= 0) {
+    throw new AppError(400, 'Select one of the supported rounds and provide a positive duration');
+  }
+
+  const existingRound = await prisma.round.findFirst({ where: { roundType } });
+  if (existingRound) throw new AppError(409, `${ROUND_TYPES[roundType].name} already exists`);
+
+  const readingPeriodSeconds = roundType === 'CODE_IN_DARK'
+    ? Number(data.readingPeriodSeconds ?? ROUND_TYPES.CODE_IN_DARK.readingPeriodSeconds)
+    : 0;
+  if (!Number.isInteger(readingPeriodSeconds) || (roundType === 'CODE_IN_DARK' && (readingPeriodSeconds < 30 || readingPeriodSeconds > 600))) {
+    throw new AppError(400, 'Code in the Dark reading period must be between 30 and 600 seconds');
   }
 
   const round = await prisma.round.create({
     data: {
-      name,
+      name: ROUND_TYPES[roundType].name,
+      roundType,
       duration: Number(duration),
-      lateEntryCutoffMinutes: Number(lateEntryCutoffMinutes),
+      readingPeriodSeconds,
       autoSubmitOnEnd: Boolean(autoSubmitOnEnd),
     },
   });
@@ -258,13 +333,29 @@ export async function createRound(data: CreateRoundInput, adminId: string) {
 }
 
 export async function updateRound(id: string, data: Partial<CreateRoundInput>) {
+  const round = await prisma.round.findUnique({ where: { id } });
+  if (!round) throw new AppError(404, 'Round not found');
+
+  if (data.duration !== undefined && (!Number.isInteger(Number(data.duration)) || Number(data.duration) <= 0)) {
+    throw new AppError(400, 'Round duration must be a positive whole number of minutes');
+  }
+
+  const readingPeriodSeconds = data.readingPeriodSeconds === undefined
+    ? undefined
+    : Number(data.readingPeriodSeconds);
+  if (readingPeriodSeconds !== undefined && (
+    !Number.isInteger(readingPeriodSeconds)
+    || (round.roundType === 'CODE_IN_DARK' && (readingPeriodSeconds < 30 || readingPeriodSeconds > 600))
+    || (round.roundType === 'CODE_RUN' && readingPeriodSeconds !== 0)
+  )) {
+    throw new AppError(400, 'Reading period must be 30-600 seconds for Code in the Dark and zero for Code Run');
+  }
+
   return prisma.round.update({
     where: { id },
     data: {
-      name: data.name,
       duration: data.duration === undefined ? undefined : Number(data.duration),
-      lateEntryCutoffMinutes:
-        data.lateEntryCutoffMinutes === undefined ? undefined : Number(data.lateEntryCutoffMinutes),
+      readingPeriodSeconds,
       autoSubmitOnEnd: data.autoSubmitOnEnd,
     },
   });
