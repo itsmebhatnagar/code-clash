@@ -1,6 +1,7 @@
 import type { AdminMetrics, Assignment, LeaderboardEntry, Participant, ParticipantDashboard, SubmissionResult, User } from './types'
+import { BACKEND_ORIGIN } from './backendUrl'
 
-export const API_URL = 'http://localhost:5000/api'
+export const API_URL = `${BACKEND_ORIGIN}/api`
 
 export function getToken() {
   return typeof window === 'undefined' ? null : localStorage.getItem('cc_token')

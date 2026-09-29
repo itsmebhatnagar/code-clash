@@ -9,7 +9,9 @@ const configuredOrigins = (process.env.FRONTEND_URL || '')
   .split(',')
   .map((origin) => origin.trim())
   .filter(Boolean);
-const allowedOrigins = isProduction ? configuredOrigins : [...configuredOrigins, 'http://localhost:3000'];
+const allowedOrigins = isProduction
+  ? configuredOrigins
+  : [...new Set([...configuredOrigins, 'http://localhost:3000', 'http://127.0.0.1:3000'])];
 
 if (isProduction && allowedOrigins.length === 0) {
   throw new Error('FRONTEND_URL is not configured');

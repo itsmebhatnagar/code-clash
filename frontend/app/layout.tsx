@@ -3,8 +3,8 @@ import type { Metadata, Viewport } from 'next'
 import './globals.css'
 
 export const metadata: Metadata = {
-  title: 'CODE CLASH — Contest Control Room',
-  description: 'A live coding contest platform for participants, admins, and judges.',
+  title: 'ECHONA 2K26 — Treasure Voyage',
+  description: 'Join the Echona 2K26 Treasure Voyage.',
   icons: {
     icon: [
       {

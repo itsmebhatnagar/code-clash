@@ -35,7 +35,7 @@ export function ParticipantPanel({ user, token, onLogout }: { user: User; token:
 
   useEffect(() => {
     if (!dashboard.round) return
-    const timer = window.setInterval(() => setNow(Date.now()), 200)
+    const timer = window.setInterval(() => setNow(Date.now()), 1000)
     return () => window.clearInterval(timer)
   }, [dashboard.round?.id])
 
