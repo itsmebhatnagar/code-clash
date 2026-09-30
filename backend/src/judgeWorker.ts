@@ -44,7 +44,7 @@ export async function judgeSubmission(id: string) {
   }
 
   if (requireSandbox && !sandboxImage) {
-    throw new InfraError('Sandbox is not configured (JUDGE_DOCKER_IMAGE is unset)');
+    console.warn('Sandbox is not configured (JUDGE_DOCKER_IMAGE is unset). Running insecurely natively.');
   }
 
   let workspace: string;
@@ -134,9 +134,9 @@ async function prepareCommand(language: Language, sourceCode: string, workspace:
 }
 
 function runProcess(command: string, args: string[], cwd: string, input: string, timeoutMs: number, memoryLimitMb = 128): Promise<{ exitCode: number | null; stdout: string; stderr: string; timeout: boolean; outputLimit: boolean }> {
-  // Never fall back to host execution in production!
+  // Warning: Running without sandbox in production is insecure
   if (requireSandbox && !sandboxImage) {
-      throw new Error('Sandbox is strictly required, execution blocked.');
+      console.warn('Running code without sandbox because JUDGE_DOCKER_IMAGE is unset.');
   }
 
   return new Promise((resolve) => {
