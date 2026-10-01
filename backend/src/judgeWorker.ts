@@ -106,7 +106,7 @@ async function prepareCommand(language: Language, sourceCode: string, workspace:
   }
   if (language === 'python') {
     await writeFile(path.join(workspace, 'main.py'), sourceCode);
-    return { command: sandboxImage ? 'python3' : (process.platform === 'win32' ? 'python' : 'python3'), args: ['-u', 'main.py'], compilationTime: null };
+    return { command: sandboxImage ? 'python3.14' : (process.platform === 'win32' ? 'python' : 'python3'), args: ['-u', 'main.py'], compilationTime: null };
   }
   if (language === 'c' || language === 'cpp') {
     const isCpp = language === 'cpp';
