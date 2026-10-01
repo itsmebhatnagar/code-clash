@@ -12,7 +12,7 @@ export function AuthShell({ onLogin, onBack }: { onLogin: (token: string, user: 
     <section className="auth-panel">
       <div className="auth-intro">
         <div className="auth-intro-header">
-          <a className="auth-echona-wordmark" href="/"><strong>ECHONA 2K26</strong><span>TREASURE VOYAGE</span></a>
+          <a className="auth-echona-wordmark" href="/"><strong>ECHONA 2026</strong><span>TREASURE VOYAGE</span></a>
           {onBack && <button className="auth-return" type="button" onClick={onBack}><ArrowLeft size={14} /> HOME</button>}
         </div>
         <div className="intro-kicker">ECHONA&nbsp; // &nbsp;TREASURE VOYAGE</div>

@@ -1,10 +1,17 @@
 'use client'
 
 import { useEffect, useState } from 'react'
-import { ArrowLeft, ArrowRight } from 'lucide-react'
+import { ArrowLeft, ArrowRight, User as UserIcon, IdCard, GraduationCap, Calendar, Mail, Key } from 'lucide-react'
 import { registerParticipant } from '../../lib/api'
 
-const fields = [['name', 'Name', 'Harshil Bhatnagar'], ['collegeId', 'College ID', '25CS019'], ['branch', 'Branch', 'Computer Science'], ['year', 'Year', '2nd year'], ['email', 'Email address', 'harshilbhatnagar@gmail.com'], ['password', 'Access code', 'Create an access code']] as const
+const fields = [
+  ['name', 'Name', 'Harshil Bhatnagar', UserIcon],
+  ['collegeId', 'College ID', '25CS019', IdCard],
+  ['branch', 'Branch', 'Computer Science', GraduationCap],
+  ['year', 'Year', '2nd year', Calendar],
+  ['email', 'Email address', 'harshilbhatnagar@gmail.com', Mail],
+  ['password', 'Access code', 'Create an access code', Key]
+] as const
 
 type FormData = Record<(typeof fields)[number][0], string>
 
@@ -24,5 +31,41 @@ export function Register({ onSignIn }: { onSignIn: () => void }) {
     } catch { setMessage('Network error.') }
   }
 
-  return <div className="register-wrap"><div className="form-kicker">PARTICIPANT REGISTRATION</div><h2>Join the crew.</h2><p className="form-subtitle">Create your station credentials to enter the contest.</p><form className="register-grid" onSubmit={handleSubmit} autoComplete="off">{fields.map(([key, label, placeholder]) => <label key={key}><span>{label}</span><input type={key === 'email' ? 'email' : key === 'password' ? 'password' : 'text'} autoComplete={key === 'password' ? 'new-password' : 'off'} placeholder={placeholder} required={key === 'name' || key === 'email' || key === 'password'} value={formData[key]} onChange={(event) => setFormData({ ...formData, [key]: event.target.value })} /></label>)}<div className="register-actions"><button className="gold-button" type="submit">CREATE ACCOUNT <ArrowRight size={15} /></button><button className="back-button" type="button" onClick={onSignIn}><ArrowLeft size={14} /> Back to sign in</button></div></form>{message && <p className="form-message">{message}</p>}</div>
+  return (
+    <div className="register-wrap premium-card">
+      <div className="form-kicker">PARTICIPANT REGISTRATION</div>
+      <h2>Join the crew.</h2>
+      <p className="form-subtitle">Create your station credentials to enter the contest.</p>
+      
+      <form className="register-grid" onSubmit={handleSubmit} autoComplete="off">
+        {fields.map(([key, label, placeholder, Icon]) => (
+          <label key={key} className="input-group">
+            <span>{label}</span>
+            <div className="input-wrapper">
+              <Icon size={16} className="input-icon" />
+              <input 
+                type={key === 'email' ? 'email' : key === 'password' ? 'password' : 'text'} 
+                autoComplete={key === 'password' ? 'new-password' : 'off'} 
+                placeholder={placeholder} 
+                required={key === 'name' || key === 'email' || key === 'password'} 
+                value={formData[key]} 
+                onChange={(event) => setFormData({ ...formData, [key]: event.target.value })} 
+              />
+            </div>
+          </label>
+        ))}
+        
+        <div className="register-actions">
+          <button className="gold-button glow-effect" type="submit">
+            CREATE ACCOUNT <ArrowRight size={15} />
+          </button>
+          <button className="back-button" type="button" onClick={onSignIn}>
+            <ArrowLeft size={14} /> Back to sign in
+          </button>
+        </div>
+      </form>
+      
+      {message && <p className="form-message">{message}</p>}
+    </div>
+  )
 }

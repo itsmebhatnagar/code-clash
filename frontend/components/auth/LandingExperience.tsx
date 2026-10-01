@@ -69,7 +69,7 @@ export function LandingExperience({ onEnter }: { onEnter: () => void }) {
         </header>
 
         <div className="echona-title-block">
-          <h1 id="echona-title">ECHONA <span>2K26</span></h1>
+          <h1 id="echona-title">ECHONA <span>2026</span></h1>
           <p>TREASURE VOYAGE</p>
         </div>
         <a className="echona-scroll-cue" href="#journey" aria-label="Scroll to the journey section">
