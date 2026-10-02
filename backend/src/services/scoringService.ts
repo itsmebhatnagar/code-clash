@@ -23,6 +23,12 @@ const QUALITY_MAX       = 100;
 const MAX_ROUND_SCORE   = 10_000;
 const MAX_TIE_BREAK_MS  = 2_147_483_647;
 
+/**
+ * ACCEPTED awards full problem points. PARTIAL awards
+ * floor(points * passedCases / totalCases). Compile errors, runtime errors,
+ * time-limit errors, output-limit errors, and wrong answers award zero.
+ * Compiler time and execution time are never scoring factors.
+ */
 export function calculateProblemPoints(points: number, status: string, passedCases: number, totalCases: number) {
   if (status === 'ACCEPTED') return points;
   if (status !== 'PARTIAL' || totalCases <= 0) return 0;
@@ -49,6 +55,8 @@ export async function recordSubmissionScore(submissionId: string) {
     include: { problem: { select: { id: true, points: true, round: { select: { roundType: true, startTime: true, readingPeriodSeconds: true } } } } },
     orderBy: { createdAt: 'asc' },
   });
+  // Best submission per problem: higher score wins; equal scores prefer the earlier
+  // valid submission (createdAt vs round coding start). Execution/compile time is unused.
   const bestByProblem = new Map<string, { points: number; submissionTimeMs: number; roundType: string }>();
   for (const attempt of attempts) {
     const points = calculateProblemPoints(attempt.problem.points, attempt.status, attempt.passedCases, attempt.totalCases);

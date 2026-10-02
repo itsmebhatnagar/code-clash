@@ -4,11 +4,11 @@ import path from 'path';
 import { spawn } from 'child_process';
 import { prisma } from './db';
 import { recordSubmissionScore } from './services/scoringService';
+import { LANGUAGE_REGISTRY, normalizeLanguage, type JudgeLanguage } from './judgeLanguages';
+
+export { normalizeLanguage } from './judgeLanguages';
 
 const MAX_OUTPUT_BYTES = 256 * 1024;
-const sandboxImage = process.env.JUDGE_DOCKER_IMAGE;
-const isProduction = process.env.NODE_ENV === 'production';
-const requireSandbox = isProduction || process.env.JUDGE_REQUIRE_SANDBOX === 'true';
 
 export class InfraError extends Error {
   constructor(message: string, public readonly cause?: unknown) {
@@ -17,10 +17,33 @@ export class InfraError extends Error {
   }
 }
 
-type Language = 'c' | 'cpp' | 'java' | 'python';
 type PreparedCommand =
   | { command: string; args: string[]; compilationTime: number | null }
   | { compilationError: string; compilationTime: number; compilationTimedOut?: boolean };
+
+type ProcessResult = {
+  exitCode: number | null;
+  stdout: string;
+  stderr: string;
+  timeout: boolean;
+  outputLimit: boolean;
+  durationMs: number;
+  spawnFailed: boolean;
+};
+
+function getSandboxConfig() {
+  const sandboxImage = process.env.JUDGE_DOCKER_IMAGE?.trim() || '';
+  const requireSandbox = process.env.NODE_ENV === 'production' || process.env.JUDGE_REQUIRE_SANDBOX === 'true';
+  return { sandboxImage: sandboxImage || undefined, requireSandbox };
+}
+
+function assertSandboxReady() {
+  const { sandboxImage, requireSandbox } = getSandboxConfig();
+  if (requireSandbox && !sandboxImage) {
+    throw new InfraError('Judge sandbox is required but JUDGE_DOCKER_IMAGE is not configured');
+  }
+  return { sandboxImage, requireSandbox };
+}
 
 export async function judgeSubmission(id: string) {
   let submission;
@@ -35,16 +58,14 @@ export async function judgeSubmission(id: string) {
 
   if (!submission) throw new InfraError(`Submission ${id} not found – may not have been persisted yet`);
 
+  assertSandboxReady();
+
   const language = normalizeLanguage(submission.language);
   if (!language) {
     return finish(id, { status: 'COMPILE_ERROR', compilationTime: null, totalCases: submission.problem.testCases.length, error: 'Unsupported language' });
   }
   if (submission.problem.testCases.length === 0) {
-    return finish(id, { status: 'COMPILE_ERROR', compilationTime: null, totalCases: 0, error: 'Problem has no test cases' });
-  }
-
-  if (requireSandbox && !sandboxImage) {
-    console.warn('Sandbox is not configured (JUDGE_DOCKER_IMAGE is unset). Running insecurely natively.');
+    return finish(id, { status: 'JUDGE_FAILED', compilationTime: null, totalCases: 0, error: 'Problem has no test cases' });
   }
 
   let workspace: string;
@@ -65,76 +86,96 @@ export async function judgeSubmission(id: string) {
       });
     }
 
-    const started = Date.now();
+    const totalCases = submission.problem.testCases.length;
     let passedCases = 0;
+    let executionTime = 0;
+    let maxTestCaseExecutionTime = 0;
+    let hadTimeLimit = false;
+    let hadOutputLimit = false;
+    let hadRuntimeError = false;
+    let hadWrongAnswer = false;
+    let runtimeError = 'Process exited with an error';
+
     for (const testCase of submission.problem.testCases) {
       const result = await runProcess(prepared.command, prepared.args, workspace, testCase.input, submission.problem.timeLimit, submission.problem.memoryLimit);
+      if (result.spawnFailed) throw new InfraError(`Failed to start the configured ${language} runtime`, new Error(result.stderr));
+      executionTime += result.durationMs;
+      maxTestCaseExecutionTime = Math.max(maxTestCaseExecutionTime, result.durationMs);
+
       if (result.timeout) {
-        return finish(id, { status: passedCases ? 'PARTIAL' : 'TIME_LIMIT_EXCEEDED', compilationTime: prepared.compilationTime, executionTime: Date.now() - started, passedCases, totalCases: submission.problem.testCases.length, error: 'Time limit exceeded' });
+        hadTimeLimit = true;
+        continue;
       }
       if (result.outputLimit) {
-        return finish(id, { status: passedCases ? 'PARTIAL' : 'OUTPUT_LIMIT_EXCEEDED', compilationTime: prepared.compilationTime, executionTime: Date.now() - started, passedCases, totalCases: submission.problem.testCases.length, error: 'Output limit exceeded' });
+        hadOutputLimit = true;
+        continue;
       }
       if (result.exitCode !== 0) {
-        return finish(id, { status: passedCases ? 'PARTIAL' : 'RUNTIME_ERROR', compilationTime: prepared.compilationTime, executionTime: Date.now() - started, passedCases, totalCases: submission.problem.testCases.length, error: result.stderr || 'Process exited with an error' });
+        hadRuntimeError = true;
+        runtimeError = result.stderr || runtimeError;
+        continue;
       }
       if (normalizeOutput(result.stdout) !== normalizeOutput(testCase.output)) {
-        return finish(id, { status: passedCases ? 'PARTIAL' : 'WRONG_ANSWER', compilationTime: prepared.compilationTime, executionTime: Date.now() - started, passedCases, totalCases: submission.problem.testCases.length, error: 'Output did not match expected result' });
+        hadWrongAnswer = true;
+        continue;
       }
       passedCases += 1;
     }
-    return finish(id, { status: passedCases === submission.problem.testCases.length ? 'ACCEPTED' : 'WRONG_ANSWER', compilationTime: prepared.compilationTime, executionTime: Date.now() - started, passedCases, totalCases: submission.problem.testCases.length });
+
+    if (passedCases === totalCases) {
+      return finish(id, { status: 'ACCEPTED', compilationTime: prepared.compilationTime, executionTime, maxTestCaseExecutionTime, passedCases, totalCases });
+    }
+    // Fatal participant errors (TLE/OLE/RTE) keep their verdicts and earn no partial points.
+    // Wrong answers on individual cases still finish the remaining cases and can score PARTIAL.
+    if (hadTimeLimit) {
+      return finish(id, { status: 'TIME_LIMIT_EXCEEDED', compilationTime: prepared.compilationTime, executionTime, maxTestCaseExecutionTime, passedCases, totalCases, error: 'Time limit exceeded' });
+    }
+    if (hadOutputLimit) {
+      return finish(id, { status: 'OUTPUT_LIMIT_EXCEEDED', compilationTime: prepared.compilationTime, executionTime, maxTestCaseExecutionTime, passedCases, totalCases, error: 'Output limit exceeded' });
+    }
+    if (hadRuntimeError) {
+      return finish(id, { status: 'RUNTIME_ERROR', compilationTime: prepared.compilationTime, executionTime, maxTestCaseExecutionTime, passedCases, totalCases, error: runtimeError });
+    }
+    if (hadWrongAnswer && passedCases > 0) {
+      return finish(id, { status: 'PARTIAL', compilationTime: prepared.compilationTime, executionTime, maxTestCaseExecutionTime, passedCases, totalCases, error: 'Output did not match expected result' });
+    }
+    return finish(id, { status: 'WRONG_ANSWER', compilationTime: prepared.compilationTime, executionTime, maxTestCaseExecutionTime, passedCases, totalCases, error: 'Output did not match expected result' });
   } finally {
     await rm(workspace, { recursive: true, force: true });
   }
 }
 
-export function normalizeLanguage(language: string): Language | null {
-  const value = language.toLowerCase();
-  if (value === 'python' || value === 'python3') return 'python';
-  if (value === 'c') return 'c';
-  if (value === 'cpp' || value === 'c++') return 'cpp';
-  if (value === 'java') return 'java';
-  return null;
-}
-
-async function prepareCommand(language: Language, sourceCode: string, workspace: string, memoryLimitMb: number): Promise<PreparedCommand> {
-  if (language === 'python') {
-    await writeFile(path.join(workspace, 'main.py'), sourceCode);
-    return { command: sandboxImage ? 'python3.14' : (process.platform === 'win32' ? 'python' : 'python3'), args: ['-u', 'main.py'], compilationTime: null };
+async function prepareCommand(language: JudgeLanguage, sourceCode: string, workspace: string, memoryLimitMb: number): Promise<PreparedCommand> {
+  const definition = LANGUAGE_REGISTRY[language];
+  const { sandboxImage } = getSandboxConfig();
+  try {
+    await writeFile(path.join(workspace, definition.sourceFile), sourceCode);
+  } catch (error) {
+    throw new InfraError('Failed to write source code into the judge workspace', error);
   }
-  if (language === 'c' || language === 'cpp') {
-    const isCpp = language === 'cpp';
-    await writeFile(path.join(workspace, isCpp ? 'main.cpp' : 'main.c'), sourceCode);
-    const compileStarted = Date.now();
-    const compiled = await runProcess(isCpp ? 'g++' : 'gcc', [isCpp ? '-std=c++17' : '-std=c17', '-O2', isCpp ? 'main.cpp' : 'main.c', '-o', 'main', '-lm'], workspace, '', 10_000, memoryLimitMb);
-    const compilationTime = Date.now() - compileStarted;
-    if (compiled.exitCode !== 0 || compiled.timeout) return {
+
+  if (!definition.compile || definition.compilationTimeoutMs == null) {
+    return { ...definition.run(workspace, memoryLimitMb, Boolean(sandboxImage)), compilationTime: null };
+  }
+
+  const compileStarted = Date.now();
+  const compiled = await runProcess(definition.compile.command, definition.compile.args, workspace, '', definition.compilationTimeoutMs, memoryLimitMb);
+  const compilationTime = Date.now() - compileStarted;
+  if (compiled.spawnFailed) throw new InfraError('Failed to start the configured compiler');
+  if (compiled.exitCode !== 0 || compiled.timeout) {
+    return {
       compilationError: compiled.timeout ? 'Compilation time limit exceeded' : compiled.stderr || compiled.stdout || 'Compilation failed',
       compilationTime,
       compilationTimedOut: compiled.timeout,
     };
-    return { command: sandboxImage ? '/workspace/main' : path.join(workspace, process.platform === 'win32' ? 'main.exe' : 'main'), args: [], compilationTime };
   }
-  await writeFile(path.join(workspace, 'Main.java'), sourceCode);
-  const compileStarted = Date.now();
-  const compiled = await runProcess('javac', ['-encoding', 'UTF-8', 'Main.java'], workspace, '', 30_000, memoryLimitMb);
-  const compilationTime = Date.now() - compileStarted;
-  if (compiled.exitCode !== 0 || compiled.timeout) return {
-    compilationError: compiled.timeout ? 'Compilation time limit exceeded' : compiled.stderr || compiled.stdout || 'Compilation failed',
-    compilationTime,
-    compilationTimedOut: compiled.timeout,
-  };
-  const heapMb = Math.max(32, memoryLimitMb);
-  return { command: 'java', args: ['-XX:+UseSerialGC', `-Xms${heapMb}m`, `-Xmx${heapMb}m`, '-Dfile.encoding=UTF-8', 'Main'], compilationTime };
+  return { ...definition.run(workspace, memoryLimitMb, Boolean(sandboxImage)), compilationTime };
 }
 
-function runProcess(command: string, args: string[], cwd: string, input: string, timeoutMs: number, memoryLimitMb = 128): Promise<{ exitCode: number | null; stdout: string; stderr: string; timeout: boolean; outputLimit: boolean }> {
-  if (requireSandbox && !sandboxImage) {
-      console.warn('Running code without sandbox because JUDGE_DOCKER_IMAGE is unset.');
-  }
+function runProcess(command: string, args: string[], cwd: string, input: string, timeoutMs: number, memoryLimitMb = 128): Promise<ProcessResult> {
+  const { sandboxImage, requireSandbox } = assertSandboxReady();
 
-  return new Promise((resolve) => {
+  return new Promise((resolve, reject) => {
     const processArgs = sandboxImage
       ? [
           'run', '--rm',
@@ -153,35 +194,75 @@ function runProcess(command: string, args: string[], cwd: string, input: string,
           sandboxImage, command, ...args,
         ]
       : args;
-      
-    const child = spawn(sandboxImage ? 'docker' : command, processArgs, { 
-        cwd: sandboxImage ? undefined : cwd, 
-        shell: false, 
-        windowsHide: true, 
-        env: sandboxImage ? { PATH: process.env.PATH || '' } : { ...process.env } 
+
+    const started = Date.now();
+    const child = spawn(sandboxImage ? 'docker' : command, processArgs, {
+      cwd: sandboxImage ? undefined : cwd,
+      shell: false,
+      windowsHide: true,
+      env: sandboxImage ? { PATH: process.env.PATH || '' } : { ...process.env },
     });
 
-    let stdout = ''; let stderr = ''; let outputLimit = false; let settled = false;
-    const timer = setTimeout(() => { child.kill('SIGKILL'); resolveOnce({ exitCode: null, stdout, stderr, timeout: true, outputLimit }); }, timeoutMs);
+    let stdout = ''; let stderr = ''; let outputLimit = false; let settled = false; let timedOut = false;
+    const timer = setTimeout(() => { timedOut = true; child.kill('SIGKILL'); }, timeoutMs);
     const append = (target: 'stdout' | 'stderr', chunk: Buffer) => {
       if (stdout.length + stderr.length + chunk.length > MAX_OUTPUT_BYTES) { outputLimit = true; child.kill('SIGKILL'); return; }
       if (target === 'stdout') stdout += chunk.toString(); else stderr += chunk.toString();
     };
-    const resolveOnce = (result: { exitCode: number | null; stdout: string; stderr: string; timeout: boolean; outputLimit: boolean }) => { if (settled) return; settled = true; clearTimeout(timer); resolve(result); };
+    const resolveOnce = (result: ProcessResult) => { if (settled) return; settled = true; clearTimeout(timer); resolve(result); };
+    const duration = () => Date.now() - started;
     child.stdout.on('data', (chunk: Buffer) => append('stdout', chunk));
     child.stderr.on('data', (chunk: Buffer) => append('stderr', chunk));
-    child.on('error', (error) => resolveOnce({ exitCode: -1, stdout, stderr: error.message, timeout: false, outputLimit }));
-    child.on('close', (exitCode) => resolveOnce({ exitCode, stdout, stderr, timeout: false, outputLimit }));
+    child.on('error', (error) => {
+      if (sandboxImage || requireSandbox) {
+        if (settled) return;
+        settled = true;
+        clearTimeout(timer);
+        reject(new InfraError('Failed to start the judge sandbox', error));
+        return;
+      }
+      resolveOnce({ exitCode: -1, stdout, stderr: error.message, timeout: timedOut, outputLimit, durationMs: duration(), spawnFailed: true });
+    });
+    child.on('close', (exitCode) => {
+      if (sandboxImage && exitCode === 125) {
+        settled = true;
+        clearTimeout(timer);
+        reject(new InfraError(stderr || 'Docker reported a sandbox infrastructure failure'));
+        return;
+      }
+      if (sandboxImage && /cannot connect to the Docker daemon|error response from daemon|pull access denied|manifest unknown|invalid mount config/i.test(stderr)) {
+        settled = true;
+        clearTimeout(timer);
+        reject(new InfraError(stderr));
+        return;
+      }
+      resolveOnce({ exitCode, stdout, stderr, timeout: timedOut, outputLimit, durationMs: duration(), spawnFailed: false });
+    });
     child.stdin.end(input);
   });
 }
 
 export function normalizeOutput(value: string) { return value.replace(/\r\n/g, '\n').trim().split('\n').map((line) => line.trimEnd()).join('\n'); }
 
-async function finish(id: string, data: { status: string; compilationTime?: number | null; executionTime?: number; passedCases?: number; totalCases: number; error?: string }) {
-  const submission = await prisma.submission.update({ 
-      where: { id }, 
-  data: { status: data.status, compilationTime: data.compilationTime, executionTime: data.executionTime, passedCases: data.passedCases ?? 0, totalCases: data.totalCases }
+async function finish(id: string, data: {
+  status: string;
+  compilationTime?: number | null;
+  executionTime?: number;
+  maxTestCaseExecutionTime?: number | null;
+  passedCases?: number;
+  totalCases: number;
+  error?: string;
+}) {
+  const submission = await prisma.submission.update({
+    where: { id },
+    data: {
+      status: data.status,
+      compilationTime: data.compilationTime,
+      executionTime: data.executionTime,
+      maxTestCaseExecutionTime: data.maxTestCaseExecutionTime,
+      passedCases: data.passedCases ?? 0,
+      totalCases: data.totalCases,
+    },
   });
   await recordSubmissionScore(id);
   return { ...submission, error: data.error };

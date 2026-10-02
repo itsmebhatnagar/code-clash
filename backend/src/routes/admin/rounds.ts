@@ -5,6 +5,8 @@ import {
   createRound,
   updateRound,
   resetRound,
+  deleteRound,
+  reorderRoundProblems,
 } from '../../services/contestService';
 
 export default function createRoundRoutes() {
@@ -20,11 +22,21 @@ export default function createRoundRoutes() {
   }));
 
   router.put('/:id', asyncHandler(async (req: any, res) => {
-    res.json(await updateRound(req.params.id as string, req.body));
+    res.json(await updateRound(req.params.id as string, req.body, req.user.id));
   }));
 
   router.post('/:id/reset', asyncHandler(async (req: any, res) => {
     res.json(await resetRound(req.params.id as string, req.user.id));
+  }));
+
+  router.put('/:id/problems/reorder', asyncHandler(async (req: any, res) => {
+    await reorderRoundProblems(req.params.id as string, req.body.ids, req.user.id);
+    res.status(204).send();
+  }));
+
+  router.delete('/:id', asyncHandler(async (req: any, res) => {
+    await deleteRound(req.params.id as string, req.user.id);
+    res.status(204).send();
   }));
 
   return router;

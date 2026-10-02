@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import request from 'supertest';
 import {
   getApp, cleanDb, seedParticipant, seedAdmin,
-  signToken, redisMock, prisma
+  signToken, redisMock, prisma, seedRoundWithProblem
 } from './helpers';
 
 async function adminToken() {
@@ -22,9 +22,14 @@ describe('Automated rulebook scoring', async () => {
     assert.equal(calculateProblemPoints(100, 'PARTIAL', 2, 4), 50);
     assert.equal(calculateProblemPoints(100, 'WRONG_ANSWER', 0, 4), 0);
     assert.equal(calculateProblemPoints(100, 'PARTIAL', 0, 4), 0);
+    assert.equal(calculateProblemPoints(100, 'COMPILE_ERROR', 0, 4), 0);
+    assert.equal(calculateProblemPoints(100, 'RUNTIME_ERROR', 3, 4), 0);
+    assert.equal(calculateProblemPoints(100, 'TIME_LIMIT_EXCEEDED', 3, 4), 0);
+    assert.equal(calculateProblemPoints(100, 'OUTPUT_LIMIT_EXCEEDED', 1, 4), 0);
+    assert.equal(calculateProblemPoints(100, 'COMPILATION_TIME_LIMIT_EXCEEDED', 0, 4), 0);
   });
 
-  test('aggregates each best problem result across both rounds and fastest-time tie-break', async () => {
+  test('aggregates each best problem result across both rounds and earlier-submission tie-break', async () => {
     const { recordSubmissionScore } = await import('../src/services/scoringService');
     const participant = await seedParticipant();
     const roundStartedAt = new Date(1_000_000);
@@ -48,6 +53,24 @@ describe('Automated rulebook scoring', async () => {
     assert.equal(evaluation?.tieBreakTimeMs, 2250);
     assert.equal(evaluation?.finalScore, 400);
     assert.equal(partialAttempts.length, 2);
+  });
+
+  test('equal scores prefer the earlier valid submission, not execution time', async () => {
+    const { recordSubmissionScore } = await import('../src/services/scoringService');
+    const participant = await seedParticipant();
+    const roundStartedAt = new Date(2_000_000);
+    const run = await prisma.round.create({ data: { name: 'Code Run', roundType: 'CODE_RUN', duration: 60, status: 'ENDED', startTime: roundStartedAt } });
+    const problem = await prisma.problem.create({ data: { title: 'Same score', description: '', inputFormat: '', outputFormat: '', constraints: '', difficulty: 'EASY', timeLimit: 1000, memoryLimit: 128, points: 100, roundId: run.id } });
+    await prisma.submission.create({
+      data: { participantId: participant.id, problemId: problem.id, language: 'python', sourceCode: '', status: 'PARTIAL', passedCases: 2, totalCases: 4, executionTime: 50, createdAt: new Date(roundStartedAt.getTime() + 900) },
+    });
+    const later = await prisma.submission.create({
+      data: { participantId: participant.id, problemId: problem.id, language: 'python', sourceCode: '', status: 'PARTIAL', passedCases: 2, totalCases: 4, executionTime: 5, createdAt: new Date(roundStartedAt.getTime() + 1_500) },
+    });
+    await recordSubmissionScore(later.id);
+    const evaluation = await prisma.evaluation.findUnique({ where: { participantId: participant.id } });
+    assert.equal(evaluation?.round1Score, 50);
+    assert.equal(evaluation?.tieBreakTimeMs, 900);
   });
 });
 
@@ -401,7 +424,7 @@ describe('Round and problem setup', async () => {
   before(async () => { await cleanDb(); });
   after(async () => { await cleanDb(); });
 
-  test('creates one question in each of the two rulebook rounds', async () => {
+  test('creates each supported round with a coding problem', async () => {
     const { token } = await adminToken();
     const app = await getApp();
     const createdRounds = [];
@@ -558,5 +581,180 @@ describe('Participant list endpoints', async () => {
 
     assert.equal(res.status, 404);
     assert.match(res.body.error, /participant not found/i);
+  });
+});
+
+describe('Coding problem administration', { concurrency: false }, async () => {
+  before(async () => { await cleanDb(); });
+  after(async () => { await cleanDb(); });
+
+  test('reports readiness only after a complete problem, example, and hidden test case exist', async () => {
+    const { token } = await adminToken();
+    const app = await getApp();
+    const roundResponse = await request(app).post('/api/admin/rounds').set('Authorization', `Bearer ${token}`).send({ roundType: 'CODE_RUN', duration: 60, readingPeriodSeconds: 0, autoSubmitOnEnd: true });
+    assert.equal(roundResponse.status, 201);
+
+    const problemResponse = await request(app).post('/api/admin/problems').set('Authorization', `Bearer ${token}`).send({
+      title: 'Sum of Array', description: 'Read N integers and print their sum.', inputFormat: 'N followed by N integers',
+      outputFormat: 'One integer', constraints: '1 <= N <= 1000', difficulty: 'EASY', timeLimit: 1000,
+      memoryLimit: 256, points: 100, roundId: roundResponse.body.id,
+    });
+    assert.equal(problemResponse.status, 201);
+
+    const example = await request(app).post(`/api/admin/problems/${problemResponse.body.id}/examples`).set('Authorization', `Bearer ${token}`).send({ input: '3\n1 2 3', output: '6' });
+    assert.equal(example.status, 201);
+    const testCase = await request(app).post(`/api/admin/problems/${problemResponse.body.id}/test-cases`).set('Authorization', `Bearer ${token}`).send({ input: '2\n4 5', output: '9' });
+    assert.equal(testCase.status, 201);
+    assert.equal(testCase.body.isHidden, true);
+
+    const rounds = await request(app).get('/api/admin/rounds').set('Authorization', `Bearer ${token}`);
+    const readyRound = rounds.body.find((round: { id: string }) => round.id === roundResponse.body.id);
+    assert.equal(readyRound.readiness.ready, true);
+    assert.equal(readyRound.problems[0].exampleCount, 1);
+    assert.equal(readyRound.problems[0].hiddenTestCaseCount, 1);
+  });
+
+  test('duplicating a problem copies points, limits, examples, and hidden test cases', async () => {
+    const { token } = await adminToken();
+    const app = await getApp();
+    const round = await prisma.round.create({ data: { name: 'Duplicate Target', roundType: 'CODE_RUN', duration: 60 } });
+    const source = await prisma.problem.create({
+      data: {
+        title: 'Original', description: 'Desc', inputFormat: 'In', outputFormat: 'Out', constraints: 'N>=1',
+        difficulty: 'HARD', timeLimit: 2500, memoryLimit: 512, points: 250, roundId: round.id,
+        examples: { create: [{ input: '1', output: '2', explanation: 'plus one', position: 0 }] },
+        testCases: { create: [{ input: '3', output: '4', isHidden: true }, { input: '5', output: '6', isHidden: false }] },
+      },
+    });
+    const copyResponse = await request(app).post(`/api/admin/problems/${source.id}/duplicate`).set('Authorization', `Bearer ${token}`).send({ roundId: round.id });
+    assert.equal(copyResponse.status, 201, JSON.stringify(copyResponse.body));
+    assert.equal(copyResponse.body.points, 250);
+    assert.equal(copyResponse.body.timeLimit, 2500);
+    assert.equal(copyResponse.body.memoryLimit, 512);
+    assert.equal(copyResponse.body.difficulty, 'HARD');
+    const details = await request(app).get(`/api/admin/problems/${copyResponse.body.id}`).set('Authorization', `Bearer ${token}`);
+    assert.equal(details.body.points, 250);
+    assert.equal(details.body.examples.length, 1);
+    assert.equal(details.body.testCases.length, 2);
+    assert.deepEqual(details.body.testCases.map((testCase: { isHidden: boolean }) => testCase.isHidden).sort(), [false, true]);
+  });
+
+  test('Code in the Dark readiness requires Code Run to finish first', async () => {
+    await cleanDb();
+    const { token } = await adminToken();
+    const codeRun = await prisma.round.create({ data: { name: 'Code Run', roundType: 'CODE_RUN', duration: 60 } });
+    const codeInDark = await prisma.round.create({ data: { name: 'Code in the Dark', roundType: 'CODE_IN_DARK', duration: 60, readingPeriodSeconds: 180 } });
+    const app = await getApp();
+
+    const pendingRounds = await request(app).get('/api/admin/rounds').set('Authorization', `Bearer ${token}`);
+    const pendingDark = pendingRounds.body.find((round: { id: string }) => round.id === codeInDark.id);
+    assert.ok(pendingDark.readiness.missing.includes('round-order'));
+
+    await prisma.round.update({ where: { id: codeRun.id }, data: { status: 'ENDED' } });
+    const completedRounds = await request(app).get('/api/admin/rounds').set('Authorization', `Bearer ${token}`);
+    const readyForDark = completedRounds.body.find((round: { id: string }) => round.id === codeInDark.id);
+    assert.equal(readyForDark.readiness.missing.includes('round-order'), false);
+  });
+
+  test('supports editing and deleting examples and test cases only while pending', async () => {
+    const { token } = await adminToken();
+    const app = await getApp();
+    const { round, problem } = await seedRoundWithProblem('PENDING');
+    const exampleResponse = await request(app).post(`/api/admin/problems/${problem.id}/examples`).set('Authorization', `Bearer ${token}`).send({ input: '1', output: '1' });
+    const testCaseResponse = await request(app).post(`/api/admin/problems/${problem.id}/test-cases`).set('Authorization', `Bearer ${token}`).send({ input: '2', output: '2' });
+
+    const updateExampleResponse = await request(app).put(`/api/admin/problems/${problem.id}/examples/${exampleResponse.body.id}`).set('Authorization', `Bearer ${token}`).send({ output: 'updated' });
+    assert.equal(updateExampleResponse.status, 200);
+    assert.equal(updateExampleResponse.body.output, 'updated');
+    const duplicateTestCaseResponse = await request(app).post(`/api/admin/problems/${problem.id}/test-cases/${testCaseResponse.body.id}/duplicate`).set('Authorization', `Bearer ${token}`);
+    assert.equal(duplicateTestCaseResponse.status, 201);
+    assert.equal(duplicateTestCaseResponse.body.isHidden, true);
+
+    const deleteExampleResponse = await request(app).delete(`/api/admin/problems/${problem.id}/examples/${exampleResponse.body.id}`).set('Authorization', `Bearer ${token}`);
+    assert.equal(deleteExampleResponse.status, 204);
+    const deleteTestCaseResponse = await request(app).delete(`/api/admin/problems/${problem.id}/test-cases/${testCaseResponse.body.id}`).set('Authorization', `Bearer ${token}`);
+    assert.equal(deleteTestCaseResponse.status, 204);
+
+    const lockedExample = await request(app).post(`/api/admin/problems/${problem.id}/examples`).set('Authorization', `Bearer ${token}`).send({ input: '3', output: '3' });
+    await prisma.round.update({ where: { id: round.id }, data: { status: 'ACTIVE' } });
+    const locked = await request(app).put(`/api/admin/problems/${problem.id}/examples/${lockedExample.body.id}`).set('Authorization', `Bearer ${token}`).send({ output: 'blocked' });
+    assert.equal(locked.status, 409);
+    const addLockedCase = await request(app).post(`/api/admin/problems/${problem.id}/test-cases`).set('Authorization', `Bearer ${token}`).send({ input: '', output: 'blocked' });
+    assert.equal(addLockedCase.status, 409);
+  });
+
+  test('duplicates every problem property, example, points value, and hidden state', async () => {
+    await cleanDb();
+    const { token } = await adminToken();
+    const app = await getApp();
+    const round = await prisma.round.create({ data: { name: 'Copy Source', roundType: 'CODE_RUN', duration: 60 } });
+    const problem = await prisma.problem.create({ data: {
+      title: 'Original', description: 'Statement', inputFormat: 'Input', outputFormat: 'Output', constraints: 'N <= 10',
+      difficulty: 'HARD', timeLimit: 2500, memoryLimit: 512, points: 275, roundId: round.id,
+      examples: { create: [{ input: '1', output: '1', explanation: 'public', position: 0 }] },
+      testCases: { create: [{ input: 'hidden input', output: 'hidden output', isHidden: true }, { input: 'public input', output: 'public output', isHidden: false }] },
+    } });
+
+    const response = await request(app).post(`/api/admin/problems/${problem.id}/duplicate`).set('Authorization', `Bearer ${token}`).send();
+
+    assert.equal(response.status, 201);
+    const copy = await prisma.problem.findUnique({ where: { id: response.body.id }, include: { examples: true, testCases: true } });
+    assert.equal(copy?.title, 'Original (Copy)');
+    assert.equal(copy?.description, 'Statement');
+    assert.equal(copy?.inputFormat, 'Input');
+    assert.equal(copy?.outputFormat, 'Output');
+    assert.equal(copy?.constraints, 'N <= 10');
+    assert.equal(copy?.difficulty, 'HARD');
+    assert.equal(copy?.timeLimit, 2500);
+    assert.equal(copy?.memoryLimit, 512);
+    assert.equal(copy?.points, 275);
+    assert.deepEqual(copy?.examples.map((example) => [example.input, example.output, example.explanation, example.position]), [['1', '1', 'public', 0]]);
+    assert.deepEqual(copy?.testCases.map((testCase) => [testCase.input, testCase.output, testCase.isHidden]), [['hidden input', 'hidden output', true], ['public input', 'public output', false]]);
+  });
+
+  test('creates and reorders multiple problems in a round, then locks order on start', async () => {
+    const { token } = await adminToken();
+    const app = await getApp();
+    const round = await prisma.round.create({ data: { name: 'Ordered Problems', roundType: 'CODE_RUN', duration: 60 } });
+    const createProblem = (title: string) => request(app).post('/api/admin/problems').set('Authorization', `Bearer ${token}`).send({
+      title, description: 'Complete statement', inputFormat: 'Input', outputFormat: 'Output', constraints: 'N >= 1',
+      difficulty: 'EASY', timeLimit: 1000, memoryLimit: 256, points: 100, roundId: round.id,
+    });
+    const first = await createProblem('First');
+    const second = await createProblem('Second');
+    const third = await createProblem('Third');
+    assert.equal(first.status, 201);
+    assert.equal(second.status, 201);
+    assert.equal(third.status, 201);
+
+    const reorder = await request(app).put(`/api/admin/rounds/${round.id}/problems/reorder`).set('Authorization', `Bearer ${token}`).send({ ids: [third.body.id, first.body.id, second.body.id] });
+    assert.equal(reorder.status, 204);
+    const list = await request(app).get('/api/admin/rounds').set('Authorization', `Bearer ${token}`);
+    const orderedRound = list.body.find((item: { id: string }) => item.id === round.id);
+    assert.deepEqual(orderedRound.problems.map((problem: { title: string }) => problem.title), ['Third', 'First', 'Second']);
+
+    await prisma.round.update({ where: { id: round.id }, data: { status: 'ACTIVE' } });
+    const locked = await request(app).put(`/api/admin/rounds/${round.id}/problems/reorder`).set('Authorization', `Bearer ${token}`).send({ ids: [first.body.id, second.body.id, third.body.id] });
+    assert.equal(locked.status, 409);
+  });
+
+  test('bulk import supports several problems in one round and rolls back invalid batches', async () => {
+    const { token } = await adminToken();
+    const app = await getApp();
+    const round = await prisma.round.create({ data: { name: 'Multi-problem Run', roundType: 'CODE_RUN', duration: 60, readingPeriodSeconds: 0 } });
+    const problemFor = (roundId: string, title: string) => ({
+      roundId, title, description: 'A complete statement.', inputFormat: 'Input', outputFormat: 'Output', constraints: 'N >= 1', difficulty: 'MEDIUM', timeLimit: 1000, memoryLimit: 256, points: 100,
+      examples: [{ input: '1', output: '1' }], testCases: [{ input: '1', output: '1', isHidden: true }],
+    });
+    const response = await request(app).post('/api/admin/problems/import').set('Authorization', `Bearer ${token}`).send({ problems: [problemFor(round.id, 'Imported One'), problemFor(round.id, 'Imported Two')] });
+    assert.equal(response.status, 201, JSON.stringify(response.body));
+    assert.equal(response.body.length, 2);
+    assert.equal(response.body[0].points, 100);
+    assert.deepEqual(response.body.map((problem: { position: number }) => problem.position), [0, 1]);
+
+    const invalidProblem = { ...problemFor(round.id, 'Invalid Later Item'), timeLimit: -1 };
+    const invalid = await request(app).post('/api/admin/problems/import').set('Authorization', `Bearer ${token}`).send({ problems: [problemFor(round.id, 'Would Be Partial'), invalidProblem] });
+    assert.equal(invalid.status, 400);
+    assert.equal(await prisma.problem.count({ where: { roundId: round.id } }), 2);
   });
 });

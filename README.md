@@ -101,7 +101,7 @@ Features include:
 | Language | Runtime | Version | Compilation Command | Execution Command |
 | ---------- | --------- | ------- | ------------------- | ----------------- |
 | C | GCC 16.2 | C17 | `gcc -std=c17 -O2 main.c -o main` | `./main` |
-| C++ | G++ 16.2 | C++17 (default), C++20, C++23 | `g++ -std=c++17 -O2 main.cpp -o main` | `./main` |
+| C++ | G++ 16.2 | C++17 | `g++ -std=c++17 -O2 main.cpp -o main` | `./main` |
 | Java | OpenJDK 25 LTS | Java 25 | `javac Main.java` | `java -Xmx<mem>m Main` |
 | Python | CPython 3.14.8 | Python 3.14 | *(interpreted)* | `python3.14 -u main.py` |
 
@@ -115,7 +115,7 @@ In Code Run, participants can see the problem and their screen while coding. In 
 Each question has an admin-configured point value. A correct solution earns full points, a solution passing some test cases earns the same proportion of points as the fraction of passed cases, and wrong answers or compile errors earn zero. 
 
 ### Tie-Breaker
-In the event of a tie, the tie-breaker is the **fastest submission time**. The final leaderboard orders by total points across both rounds, then by the fastest overall submission time.
+If totals are tied, the earlier valid submission wins. For each problem the best attempt is the higher score, then the earlier submission after that round's coding start (Code in the Dark excludes the reading period). The stored tie-break value is the sum of those submission times. Compiler time and execution time are not used.
 
 ### Rewards and Titles
 Code Clash awards the following prestigious titles to top performers:
@@ -629,12 +629,14 @@ DATABASE_URL="file:./dev.db"
 JWT_SECRET="replace-with-a-long-random-secret"
 FRONTEND_URL="http://localhost:3000"
 PORT=5000
-REDIS_URL="redis://localhost:6379"
+REDIS_URL="redis://127.0.0.1:6387"
 JUDGE_DOCKER_IMAGE=""
 JUDGE_REQUIRE_SANDBOX=false
 ADMIN_EMAIL="admin@example.com"
 ADMIN_PASSWORD="replace-with-a-strong-password"
 ```
+
+If a separate Redis 3.x service is already bound to port 6379 on your machine, the project uses port 6387 for the Dockerized Redis 7 instance to avoid the BullMQ compatibility error.
 
 Build the judge image when you want submissions sandboxed locally:
 

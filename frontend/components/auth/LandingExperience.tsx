@@ -65,7 +65,6 @@ export function LandingExperience({ onEnter }: { onEnter: () => void }) {
             <span>ECHONA 2K26</span>
             <small>TREASURE VOYAGE</small>
           </a>
-          <button className="echona-login" type="button" onClick={onEnter}>LOGIN <ArrowRight size={15} /></button>
         </header>
 
         <div className="echona-title-block">

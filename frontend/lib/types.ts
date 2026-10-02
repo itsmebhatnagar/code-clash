@@ -29,16 +29,27 @@ export type AdminRound = {
   autoSubmitOnEnd: boolean
   startTime?: string | null
   endTime?: string | null
-  problems?: Array<{ id: string; title: string; points?: number; testCaseCount?: number }>
+  readiness?: RoundReadiness
+  problems?: Array<{ id: string; title: string; position: number; points: number; exampleCount: number; testCaseCount: number; hiddenTestCaseCount: number; ready: boolean }>
 }
 
 export type AdminProblem = Problem & {
   roundId: string
+  position: number
   points: number
   difficulty: string
   round?: AdminRound
-  examples?: Array<{ id: string; input: string; output: string; explanation?: string | null }>
-  testCases?: Array<{ id: string; input: string; output: string; isHidden: boolean }>
+  examples?: ProblemExample[]
+  exampleCount?: number
+  testCaseCount?: number
+}
+
+export type ProblemExample = { id: string; problemId?: string; input: string; output: string; explanation?: string | null; position?: number }
+export type AdminTestCase = { id: string; problemId: string; input: string; output: string; isHidden: boolean }
+export type RoundReadiness = {
+  ready: boolean
+  checks: Array<{ key: string; label: string; ready: boolean }>
+  missing: string[]
 }
 
 export type AdminWorkstation = {
@@ -55,6 +66,7 @@ export type AdminSubmission = {
   sourceCode: string
   compilationTime?: number | null
   executionTime?: number | null
+  maxTestCaseExecutionTime?: number | null
   passedCases: number
   totalCases: number
   createdAt: string
@@ -122,6 +134,7 @@ export type Problem = {
   timeLimit: number
   memoryLimit: number
   points?: number
+  examples?: ProblemExample[]
 }
 
 export type Assignment = {
@@ -144,5 +157,6 @@ export type SubmissionResult = {
   totalCases: number
   compilationTime?: number | null
   executionTime?: number
+  maxTestCaseExecutionTime?: number | null
   error?: string
 }

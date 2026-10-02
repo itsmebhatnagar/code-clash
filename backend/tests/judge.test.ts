@@ -160,4 +160,132 @@ describe('judgeSubmission – verdicts', async () => {
     });
     assert.equal(result.status, 'OUTPUT_LIMIT_EXCEEDED');
   });
+
+  test('PARTIAL – continues after a wrong answer and scores passed/total cases', async () => {
+    const result = await runJudgeCases({
+      language: 'python',
+      sourceCode: 'print(input())',
+      cases: [
+        { input: '1', output: '1', isHidden: true },
+        { input: '2', output: '2', isHidden: true },
+        { input: '3', output: 'wrong', isHidden: true },
+        { input: '4', output: '4', isHidden: false },
+        { input: '5', output: '5', isHidden: true },
+      ],
+    });
+    assert.equal(result.status, 'PARTIAL');
+    assert.equal(result.passedCases, 4);
+    assert.equal(result.totalCases, 5);
+    const { calculateProblemPoints } = await import('../src/services/scoringService');
+    assert.equal(calculateProblemPoints(100, result.status, result.passedCases, result.totalCases), 80);
+    assert.equal(typeof result.executionTime, 'number');
+    assert.equal(typeof result.maxTestCaseExecutionTime, 'number');
+  });
+
+  test('RUNTIME_ERROR – still evaluates remaining cases but awards no partial points', async () => {
+    const result = await runJudgeCases({
+      language: 'python',
+      sourceCode: 'value = input().strip()\nif value == "boom":\n    raise RuntimeError("boom")\nprint(value)',
+      cases: [
+        { input: 'ok', output: 'ok', isHidden: true },
+        { input: 'boom', output: 'ok', isHidden: true },
+        { input: 'later', output: 'later', isHidden: true },
+      ],
+    });
+    assert.equal(result.status, 'RUNTIME_ERROR');
+    assert.equal(result.passedCases, 2);
+    assert.equal(result.totalCases, 3);
+    const { calculateProblemPoints } = await import('../src/services/scoringService');
+    assert.equal(calculateProblemPoints(100, result.status, result.passedCases, result.totalCases), 0);
+  });
+
+  test('TIME_LIMIT_EXCEEDED – evaluates remaining cases but awards no partial points', async () => {
+    const { problem: rawProblem } = await seedRoundWithProblem('ACTIVE');
+    await prisma.testCase.deleteMany({ where: { problemId: rawProblem.id } });
+    await prisma.testCase.createMany({
+      data: [
+        { problemId: rawProblem.id, input: 'ok', output: 'ok', isHidden: true },
+        { problemId: rawProblem.id, input: 'loop', output: 'ok', isHidden: true },
+        { problemId: rawProblem.id, input: 'later', output: 'later', isHidden: true },
+      ],
+    });
+    const participant = await seedParticipant();
+    const submission = await prisma.submission.create({
+      data: {
+        participantId: participant.id,
+        problemId: rawProblem.id,
+        language: 'python',
+        sourceCode: 'value = input().strip()\nif value == "loop":\n    while True:\n        pass\nprint(value)',
+        status: 'PENDING',
+        ipAddress: '127.0.0.1',
+        deviceFingerprint: 'test-fingerprint',
+      },
+    });
+    const { judgeSubmission } = await import('../src/judgeWorker');
+    const result = await judgeSubmission(submission.id);
+    assert.equal(result.status, 'TIME_LIMIT_EXCEEDED');
+    assert.equal(result.passedCases, 2);
+    assert.equal(result.totalCases, 3);
+  });
+
+  test('sandbox required without Docker image raises InfraError and leaves the submission unjudged', async () => {
+    const { problem } = await seedRoundWithProblem('ACTIVE');
+    const participant = await seedParticipant();
+    const submission = await prisma.submission.create({
+      data: {
+        participantId: participant.id,
+        problemId: problem.id,
+        language: 'python',
+        sourceCode: 'print("hello")',
+        status: 'PENDING',
+        ipAddress: '127.0.0.1',
+        deviceFingerprint: 'test-fingerprint',
+      },
+    });
+    const previousRequire = process.env.JUDGE_REQUIRE_SANDBOX;
+    const previousImage = process.env.JUDGE_DOCKER_IMAGE;
+    process.env.JUDGE_REQUIRE_SANDBOX = 'true';
+    delete process.env.JUDGE_DOCKER_IMAGE;
+    try {
+      const { judgeSubmission, InfraError } = await import('../src/judgeWorker');
+      await assert.rejects(() => judgeSubmission(submission.id), InfraError);
+      const unchanged = await prisma.submission.findUnique({ where: { id: submission.id } });
+      assert.equal(unchanged?.status, 'PENDING');
+    } finally {
+      process.env.JUDGE_REQUIRE_SANDBOX = previousRequire;
+      if (previousImage === undefined) delete process.env.JUDGE_DOCKER_IMAGE;
+      else process.env.JUDGE_DOCKER_IMAGE = previousImage;
+    }
+  });
 });
+
+async function runJudgeCases(options: {
+  sourceCode: string;
+  language: string;
+  cases: Array<{ input: string; output: string; isHidden?: boolean }>;
+}) {
+  const { problem: rawProblem } = await seedRoundWithProblem('ACTIVE');
+  await prisma.testCase.deleteMany({ where: { problemId: rawProblem.id } });
+  await prisma.testCase.createMany({
+    data: options.cases.map((testCase) => ({
+      problemId: rawProblem.id,
+      input: testCase.input,
+      output: testCase.output,
+      isHidden: testCase.isHidden ?? true,
+    })),
+  });
+  const participant = await seedParticipant();
+  const submission = await prisma.submission.create({
+    data: {
+      participantId: participant.id,
+      problemId: rawProblem.id,
+      language: options.language,
+      sourceCode: options.sourceCode,
+      status: 'PENDING',
+      ipAddress: '127.0.0.1',
+      deviceFingerprint: 'test-fingerprint',
+    },
+  });
+  const { judgeSubmission } = await import('../src/judgeWorker');
+  return judgeSubmission(submission.id);
+}

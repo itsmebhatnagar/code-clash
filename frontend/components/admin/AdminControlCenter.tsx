@@ -4,29 +4,34 @@ import { useEffect, useState } from 'react'
 import { ClipboardList, Database, Gavel, Monitor, Plus, RefreshCw, Settings, ShieldCheck, Trash2, Unlock, UserCheck, Users, X } from 'lucide-react'
 import { adminFetch, adminMutate, getLeaderboard } from '../../lib/api'
 import type { AdminAuditLog, AdminEvaluation, AdminProblem, AdminRound, AdminSetting, AdminSubmission, AdminWorkstation, LeaderboardEntry, Participant, SuddenDeathRound, UserRole } from '../../lib/types'
+import { ContestSetup as ContestSetupWorkflow } from './ContestSetup'
 
-type Tab = 'operations' | 'contest' | 'review' | 'system'
+export type AdminPage = 'participants' | 'workstations' | 'rounds' | 'problems' | 'submissions' | 'evaluations' | 'leaderboard' | 'audit-logs' | 'settings'
 type Message = { kind: 'success' | 'error'; text: string } | null
 
-export function AdminControlCenter({ token, selectedTab, onTabChange }: { token: string; selectedTab?: Tab; onTabChange?: (tab: Tab) => void }) {
-  const [tab, setTab] = useState<Tab>(selectedTab || 'operations')
+const pageDetails: Record<AdminPage, { title: string; description: string; section: string; Icon: typeof Users }> = {
+  participants: { title: 'Participants', description: 'Review registrations and manage competitor access.', section: 'OPERATIONS', Icon: Users },
+  workstations: { title: 'Workstations', description: 'Assign and release competition stations.', section: 'OPERATIONS', Icon: Monitor },
+  rounds: { title: 'Rounds', description: 'Configure contest rounds and their timing.', section: 'CONTEST SETUP', Icon: Gavel },
+  problems: { title: 'Problems', description: 'Create questions, examples, and scoring data.', section: 'CONTEST SETUP', Icon: Database },
+  submissions: { title: 'Submissions', description: 'Inspect submitted solutions and execution results.', section: 'REVIEW DESK', Icon: ClipboardList },
+  evaluations: { title: 'Evaluations', description: 'Manage final scoring, adjustments, and locks.', section: 'REVIEW DESK', Icon: ShieldCheck },
+  leaderboard: { title: 'Leaderboard', description: 'Review current standings and tie-break details.', section: 'REVIEW DESK', Icon: ShieldCheck },
+  'audit-logs': { title: 'Audit logs', description: 'Trace administrator actions across the contest.', section: 'SYSTEM', Icon: ClipboardList },
+  settings: { title: 'Settings', description: 'Manage contest settings, roles, and sudden-death rounds.', section: 'SYSTEM', Icon: Settings }
+}
+
+export function AdminControlCenter({ token, selectedTab = 'participants', onTabChange }: { token: string; selectedTab?: AdminPage; onTabChange?: (page: AdminPage) => void }) {
+  const page = selectedTab
+  const { title, description, section, Icon } = pageDetails[page]
   const [message, setMessage] = useState<Message>(null)
-
-  useEffect(() => {
-    if (selectedTab) setTab(selectedTab)
-  }, [selectedTab])
-
-  function selectTab(nextTab: Tab) {
-    setTab(nextTab)
-    onTabChange?.(nextTab)
-  }
 
   function notify(next: Message) {
     setMessage(next)
     window.setTimeout(() => setMessage(null), 3500)
   }
 
-  return <section className="admin-control"><div className="control-heading"><div><div className="form-kicker">ADMIN OPERATIONS</div><h2>Control center</h2><p>Manage every contest surface available to authenticated administrators.</p></div><RefreshCw size={20} /></div><nav className="admin-tabs" aria-label="Admin controls">{([['operations', 'Operations', Users], ['contest', 'Contest setup', Gavel], ['review', 'Review desk', ClipboardList], ['system', 'System', Settings]] as const).map(([key, label, Icon]) => <button className={tab === key ? 'admin-tab active' : 'admin-tab'} key={key} onClick={() => selectTab(key)}><Icon size={15} />{label}</button>)}</nav>{message && <p className={message.kind === 'error' ? 'admin-message error' : 'admin-message'}>{message.text}</p>}{tab === 'operations' && <Operations token={token} notify={notify} />}{tab === 'contest' && <ContestSetup token={token} notify={notify} />}{tab === 'review' && <ReviewDesk token={token} notify={notify} />}{tab === 'system' && <SystemDesk token={token} notify={notify} />}</section>
+  return <section className={`admin-control admin-page admin-page-${page}`}><div className="control-heading"><div><div className="form-kicker">THE BRIDGE / {section}</div><h2>{title}</h2><p>{description}</p></div><Icon size={22} /></div>{message && <p className={message.kind === 'error' ? 'admin-message error' : 'admin-message'}>{message.text}</p>}{(page === 'participants' || page === 'workstations') && <Operations token={token} notify={notify} />}{(page === 'rounds' || page === 'problems') && <ContestSetupWorkflow token={token} page={page} notify={notify} onNavigate={onTabChange ?? (() => {})} />}{(page === 'submissions' || page === 'evaluations' || page === 'leaderboard') && <ReviewDesk token={token} notify={notify} />}{(page === 'audit-logs' || page === 'settings') && <SystemDesk token={token} notify={notify} page={page} />}</section>
 }
 
 function Operations({ token, notify }: { token: string; notify: (message: Message) => void }) {
@@ -71,106 +76,6 @@ function Operations({ token, notify }: { token: string; notify: (message: Messag
   return <div className="admin-grid two-columns"><AdminSection title="Participant access" icon={<Users size={16} />}><div className="admin-table">{loading ? <p>Loading participants...</p> : participants.map((participant) => <div className="admin-row" key={participant.id}><div><strong>{participant.name}</strong><small>{participant.email} · {participant.collegeId || 'No college ID'}</small></div><b>{participant.status}</b><div className="row-actions"><button className="mini-button" onClick={() => void changeStatus(participant.id, 'CHECKED_IN')}><UserCheck size={13} /> Check in</button><button className="mini-button danger" onClick={() => void changeStatus(participant.id, 'DISQUALIFIED')}><X size={13} /> Disqualify</button></div></div>)}</div></AdminSection><AdminSection title="Workstations" icon={<Monitor size={16} />}><form className="inline-form" onSubmit={assignWorkstation}><input aria-label="PC number" placeholder="PC-01" value={pcNumber} onChange={(event) => setPcNumber(event.target.value)} required /><select aria-label="Participant" value={participantId} onChange={(event) => setParticipantId(event.target.value)} required><option value="">Select participant</option>{participants.filter((participant) => participant.status !== 'DISQUALIFIED').map((participant) => <option value={participant.id} key={participant.id}>{participant.name}</option>)}</select><button className="gold-button" type="submit"><Plus size={14} /> Assign</button></form><div className="admin-table">{workstations.map((workstation) => <div className="admin-row" key={workstation.id}><div><strong>{workstation.pcNumber}</strong><small>{workstation.participant?.name || 'Unassigned'}</small></div><button className="mini-button" onClick={() => void releaseWorkstation(workstation.id)}>Release</button></div>)}{!workstations.length && <p className="empty-roster">No workstations configured.</p>}</div></AdminSection></div>
 }
 
-function ContestSetup({ token, notify }: { token: string; notify: (message: Message) => void }) {
-  const [rounds, setRounds] = useState<AdminRound[]>([])
-  const [problems, setProblems] = useState<AdminProblem[]>([])
-  const [roundType, setRoundType] = useState<'CODE_RUN' | 'CODE_IN_DARK'>('CODE_RUN')
-  const [duration, setDuration] = useState('60')
-  const [readingPeriodSeconds, setReadingPeriodSeconds] = useState('180')
-  const [problem, setProblem] = useState({ title: '', description: '', inputFormat: '', outputFormat: '', constraints: '', difficulty: 'MEDIUM', timeLimit: '1000', memoryLimit: '256', points: '100', roundId: '' })
-  const [problemId, setProblemId] = useState('')
-  const [testCase, setTestCase] = useState({ input: '', output: '', isHidden: true })
-  const [example, setExample] = useState({ input: '', output: '', explanation: '' })
-  const [loading, setLoading] = useState(true)
-
-  async function load() {
-    setLoading(true)
-    const [roundResult, problemResult] = await Promise.all([adminFetch<AdminRound[]>(token, '/rounds'), adminFetch<AdminProblem[]>(token, '/problems')])
-    setRounds(roundResult.data || []); setProblems(problemResult.data || []); setLoading(false)
-  }
-  useEffect(() => { void load() }, [token])
-
-  async function createRound(event: React.FormEvent<HTMLFormElement>) {
-    event.preventDefault()
-    const result = await adminMutate<AdminRound & { error?: string }>(token, '/rounds', 'POST', { roundType, duration: Number(duration), readingPeriodSeconds: Number(readingPeriodSeconds) })
-    if (!result.response.ok) {
-      const errorText = typeof result.data === 'object' && result.data && 'error' in result.data && typeof result.data.error === 'string'
-        ? result.data.error
-        : 'Could not create round.'
-      return notify({ kind: 'error', text: errorText })
-    }
-    notify({ kind: 'success', text: `${result.data?.name || 'Round'} created.` }); void load()
-  }
-
-  async function createProblem(event: React.FormEvent<HTMLFormElement>) {
-    event.preventDefault()
-    const result = await adminMutate<AdminProblem>(token, '/problems', 'POST', { ...problem, timeLimit: Number(problem.timeLimit), memoryLimit: Number(problem.memoryLimit), points: Number(problem.points) })
-    if (!result.response.ok) return notify({ kind: 'error', text: 'Could not create problem.' })
-    setProblem({ title: '', description: '', inputFormat: '', outputFormat: '', constraints: '', difficulty: 'MEDIUM', timeLimit: '1000', memoryLimit: '256', points: '100', roundId: '' }); notify({ kind: 'success', text: 'Problem created.' }); void load()
-  }
-
-  async function roundAction(id: string, action: 'reset') {
-    const result = await adminMutate<AdminRound>(token, `/rounds/${id}/${action}`, 'POST')
-    if (!result.response.ok) return notify({ kind: 'error', text: 'Could not update round.' })
-    notify({ kind: 'success', text: 'Round reset.' }); void load()
-  }
-
-  async function deleteProblem(id: string) {
-    const result = await adminMutate<null>(token, `/problems/${id}`, 'DELETE')
-    if (!result.response.ok) return notify({ kind: 'error', text: 'Could not delete problem.' })
-    notify({ kind: 'success', text: 'Problem deleted.' }); void load()
-  }
-
-  async function addProblemData(kind: 'test-cases' | 'examples', event: React.FormEvent<HTMLFormElement>) {
-    event.preventDefault()
-    const body = kind === 'test-cases' ? testCase : example
-    const result = await adminMutate<AdminProblem>(token, `/problems/${problemId}/${kind}`, 'POST', body)
-    if (!result.response.ok) return notify({ kind: 'error', text: `Could not add ${kind === 'test-cases' ? 'test case' : 'example'}.` })
-    if (kind === 'test-cases') setTestCase({ input: '', output: '', isHidden: true })
-    else setExample({ input: '', output: '', explanation: '' })
-    notify({ kind: 'success', text: `${kind === 'test-cases' ? 'Test case' : 'Example'} added.` }); void load()
-  }
-
-  async function duplicateProblem(event: React.FormEvent<HTMLFormElement>) {
-    event.preventDefault()
-    const result = await adminMutate<AdminProblem>(token, `/problems/${problemId}/duplicate`, 'POST', { roundId: problem.roundId || undefined })
-    if (!result.response.ok) return notify({ kind: 'error', text: 'Could not duplicate problem.' })
-    notify({ kind: 'success', text: 'Problem duplicated.' }); void load()
-  }
-
-  return <div className="admin-grid two-columns">
-    <AdminSection title="Competition rounds" icon={<Gavel size={16} />}>
-      <form className="stack-form" onSubmit={createRound}>
-        <select value={roundType} onChange={(event) => setRoundType(event.target.value as 'CODE_RUN' | 'CODE_IN_DARK')}>
-          <option value="CODE_RUN" disabled={rounds.some((round) => round.roundType === 'CODE_RUN')}>Code Run{rounds.some((round) => round.roundType === 'CODE_RUN') ? ' (created)' : ''}</option>
-          <option value="CODE_IN_DARK" disabled={rounds.some((round) => round.roundType === 'CODE_IN_DARK')}>Code in the Dark{rounds.some((round) => round.roundType === 'CODE_IN_DARK') ? ' (created)' : ''}</option>
-        </select>
-        <input type="number" min="1" max="360" placeholder="Coding duration (minutes)" value={duration} onChange={(event) => setDuration(event.target.value)} required />
-        {roundType === 'CODE_IN_DARK' && <input type="number" min="30" max="600" placeholder="Reading period (seconds)" value={readingPeriodSeconds} onChange={(event) => setReadingPeriodSeconds(event.target.value)} required />}
-        <button className="gold-button" type="submit" disabled={rounds.some((round) => round.roundType === roundType)}><Plus size={14} /> Create round</button>
-      </form>
-      <div className="admin-table">{loading ? <p>Loading contest setup...</p> : rounds.map((round) => <div className="admin-row" key={round.id}><div><strong>{round.name}</strong><small>{round.duration} min{round.roundType === 'CODE_IN_DARK' ? ` · ${round.readingPeriodSeconds}s reading` : ''} · ${round.status} · {round.problems?.[0] ? `${round.problems[0].points} pts · ${round.problems[0].testCaseCount || 0} test cases` : 'Question required'}</small></div><button className="mini-button" onClick={() => void roundAction(round.id, 'reset')}><RefreshCw size={13} /> Reset</button></div>)}</div>
-    </AdminSection>
-    <AdminSection title="Questions and scoring" icon={<Database size={16} />}>
-      <form className="stack-form" onSubmit={createProblem}>
-        <input placeholder="Question title" value={problem.title} onChange={(event) => setProblem({ ...problem, title: event.target.value })} required />
-        <select value={problem.roundId} onChange={(event) => setProblem({ ...problem, roundId: event.target.value })} required><option value="">Attach to pending round</option>{rounds.filter((round) => round.status === 'PENDING').map((round) => <option value={round.id} key={round.id}>{round.name}</option>)}</select>
-        <input type="number" min="1" max="10000" placeholder="Points for full solution" value={problem.points} onChange={(event) => setProblem({ ...problem, points: event.target.value })} required />
-        <textarea placeholder="Description" value={problem.description} onChange={(event) => setProblem({ ...problem, description: event.target.value })} required />
-        <div className="form-pair"><input placeholder="Input format" value={problem.inputFormat} onChange={(event) => setProblem({ ...problem, inputFormat: event.target.value })} required /><input placeholder="Output format" value={problem.outputFormat} onChange={(event) => setProblem({ ...problem, outputFormat: event.target.value })} required /></div>
-        <div className="form-pair"><input placeholder="Time limit (ms)" value={problem.timeLimit} onChange={(event) => setProblem({ ...problem, timeLimit: event.target.value })} required /><input placeholder="Memory limit (MB)" value={problem.memoryLimit} onChange={(event) => setProblem({ ...problem, memoryLimit: event.target.value })} required /></div>
-        <button className="gold-button" type="submit"><Plus size={14} /> Create question</button>
-      </form>
-      <div className="admin-table">{problems.map((item) => <div className="admin-row" key={item.id}><div><strong>{item.title}</strong><small>{item.points} pts · {item.difficulty} · {item.round?.name || 'No round'}</small></div><button className="mini-button danger" onClick={() => void deleteProblem(item.id)}><Trash2 size={13} /> Delete</button></div>)}</div>
-      <div className="advanced-tools"><div className="form-kicker">QUESTION DATA</div><select value={problemId} onChange={(event) => setProblemId(event.target.value)}><option value="">Select question</option>{problems.map((item) => <option value={item.id} key={item.id}>{item.title}</option>)}</select>
-        <form className="stack-form" onSubmit={(event) => void duplicateProblem(event)}><button className="mini-button" type="submit" disabled={!problemId}><Database size={13} /> Duplicate selected</button></form>
-        <form className="stack-form" onSubmit={(event) => void addProblemData('test-cases', event)}><input placeholder="Test input" value={testCase.input} onChange={(event) => setTestCase({ ...testCase, input: event.target.value })} required /><input placeholder="Expected output" value={testCase.output} onChange={(event) => setTestCase({ ...testCase, output: event.target.value })} required /><button className="mini-button" type="submit" disabled={!problemId}><Plus size={13} /> Add test case</button></form>
-        <form className="stack-form" onSubmit={(event) => void addProblemData('examples', event)}><input placeholder="Example input" value={example.input} onChange={(event) => setExample({ ...example, input: event.target.value })} required /><input placeholder="Example output" value={example.output} onChange={(event) => setExample({ ...example, output: event.target.value })} required /><input placeholder="Explanation (optional)" value={example.explanation} onChange={(event) => setExample({ ...example, explanation: event.target.value })} /><button className="mini-button" type="submit" disabled={!problemId}><Plus size={13} /> Add example</button></form>
-      </div>
-    </AdminSection>
-  </div>
-}
-
 function ReviewDesk({ token, notify }: { token: string; notify: (message: Message) => void }) {
   const [submissions, setSubmissions] = useState<AdminSubmission[]>([])
   const [evaluations, setEvaluations] = useState<AdminEvaluation[]>([])
@@ -207,7 +112,7 @@ function ReviewDesk({ token, notify }: { token: string; notify: (message: Messag
 
   return <div className="admin-grid two-columns">
     <AdminSection title="Submission review" icon={<ClipboardList size={16} />}>
-      <div className="admin-table compact-table">{submissions.slice(0, 20).map((submission) => <div className="admin-row" key={submission.id}><div><strong>{submission.participant.name}</strong><small>{submission.problem.title} · {submission.language}</small><small>Compile {submission.compilationTime == null ? 'N/A' : `${submission.compilationTime} ms`} · Run {submission.executionTime == null ? 'N/A' : `${submission.executionTime} ms`}</small></div><b>{submission.status}</b><button className="mini-button" onClick={() => navigator.clipboard?.writeText(submission.sourceCode)}>Copy code</button></div>)}{!submissions.length && <p className="empty-roster">No submissions available.</p>}</div>
+      <div className="admin-table compact-table">{submissions.slice(0, 20).map((submission) => <div className="admin-row" key={submission.id}><div><strong>{submission.participant.name}</strong><small>{submission.problem.title} · {submission.language}</small><small>Compile {submission.compilationTime == null ? 'N/A' : `${submission.compilationTime} ms`} · Run {submission.executionTime == null ? 'N/A' : `${submission.executionTime} ms`}{submission.maxTestCaseExecutionTime == null ? '' : ` (max ${submission.maxTestCaseExecutionTime} ms)`}</small></div><b>{submission.status}</b><button className="mini-button" onClick={() => navigator.clipboard?.writeText(submission.sourceCode)}>Copy code</button></div>)}{!submissions.length && <p className="empty-roster">No submissions available.</p>}</div>
     </AdminSection>
     <AdminSection title="Evaluation and scoring" icon={<ShieldCheck size={16} />}>
       <form className="stack-form" onSubmit={adjustScore}><input placeholder="Participant ID" value={participantId} onChange={(event) => setParticipantId(event.target.value)} required /><input type="number" min="-500" max="500" placeholder="Manual adjustment (-500 to 500)" value={scores.manualAdjustments} onChange={(event) => setScores({ ...scores, manualAdjustments: event.target.value })} /><input placeholder="Reason" value={scores.reason} onChange={(event) => setScores({ ...scores, reason: event.target.value })} required /><button className="gold-button" type="submit"><Plus size={14} /> Adjust total</button></form>
@@ -220,7 +125,7 @@ function ReviewDesk({ token, notify }: { token: string; notify: (message: Messag
   </div>
 }
 
-function SystemDesk({ token, notify }: { token: string; notify: (message: Message) => void }) {
+function SystemDesk({ token, notify, page }: { token: string; notify: (message: Message) => void; page: 'audit-logs' | 'settings' }) {
   const [logs, setLogs] = useState<AdminAuditLog[]>([])
   const [settings, setSettings] = useState<AdminSetting[]>([])
   const [settingKey, setSettingKey] = useState('')
@@ -264,7 +169,20 @@ function SystemDesk({ token, notify }: { token: string; notify: (message: Messag
     setRoleUserId(''); notify({ kind: 'success', text: 'User role updated.' })
   }
 
-  return <div className="admin-grid two-columns"><AdminSection title="Settings and audit" icon={<Settings size={16} />}><form className="inline-form" onSubmit={saveSetting}><input placeholder="Setting key" value={settingKey} onChange={(event) => setSettingKey(event.target.value)} required /><input placeholder="Value" value={settingValue} onChange={(event) => setSettingValue(event.target.value)} required /><button className="gold-button" type="submit">Save</button></form><form className="inline-form" onSubmit={updateRole}><input placeholder="User ID" value={roleUserId} onChange={(event) => setRoleUserId(event.target.value)} required /><select value={role} onChange={(event) => setRole(event.target.value as UserRole)}><option value="PARTICIPANT">Participant</option><option value="JUDGE">Judge</option><option value="ADMIN">Admin</option></select><button className="mini-button" type="submit"><UserCheck size={13} /> Set role</button></form><div className="admin-table">{settings.map((setting) => <div className="admin-row" key={setting.key}><div><strong>{setting.key}</strong><small>{setting.value}</small></div></div>)}{logs.slice(0, 12).map((log) => <div className="admin-row" key={log.id}><div><strong>{log.actionType}</strong><small>{log.description}</small></div></div>)}</div></AdminSection><AdminSection title="Sudden death" icon={<Gavel size={16} />}><form className="stack-form" onSubmit={createSuddenDeath}><input placeholder="Round name" value={suddenForm.name} onChange={(event) => setSuddenForm({ ...suddenForm, name: event.target.value })} required /><div className="form-pair"><input type="number" min="1" placeholder="Duration" value={suddenForm.duration} onChange={(event) => setSuddenForm({ ...suddenForm, duration: event.target.value })} required /><input type="number" placeholder="Bonus points" value={suddenForm.bonusPoints} onChange={(event) => setSuddenForm({ ...suddenForm, bonusPoints: event.target.value })} /></div><input placeholder="Participant IDs, comma separated" value={suddenForm.participantIds} onChange={(event) => setSuddenForm({ ...suddenForm, participantIds: event.target.value })} required /><button className="gold-button" type="submit"><Plus size={14} /> Create round</button></form><div className="admin-table">{suddenDeath.map((round) => <div className="admin-row" key={round.id}><div><strong>{round.name}</strong><small>{round.duration} minutes · {round.status}</small></div>{round.status === 'PENDING' ? <button className="mini-button" onClick={() => void updateSuddenDeath(round.id, 'start')}>Start</button> : round.status === 'ACTIVE' ? <button className="mini-button" onClick={() => void updateSuddenDeath(round.id, 'end')}>End</button> : null}</div>)}</div></AdminSection></div>
+  return <div className={page === 'audit-logs' ? 'admin-grid audit-logs-grid' : 'admin-grid two-columns'}>
+    {page === 'settings' && <AdminSection title="Settings and roles" icon={<Settings size={16} />}>
+      <form className="inline-form" onSubmit={saveSetting}><input placeholder="Setting key" value={settingKey} onChange={(event) => setSettingKey(event.target.value)} required /><input placeholder="Value" value={settingValue} onChange={(event) => setSettingValue(event.target.value)} required /><button className="gold-button" type="submit">Save</button></form>
+      <form className="inline-form" onSubmit={updateRole}><input placeholder="User ID" value={roleUserId} onChange={(event) => setRoleUserId(event.target.value)} required /><select value={role} onChange={(event) => setRole(event.target.value as UserRole)}><option value="PARTICIPANT">Participant</option><option value="JUDGE">Judge</option><option value="ADMIN">Admin</option></select><button className="mini-button" type="submit"><UserCheck size={13} /> Set role</button></form>
+      <div className="admin-table">{settings.map((setting) => <div className="admin-row" key={setting.key}><div><strong>{setting.key}</strong><small>{setting.value}</small></div></div>)}</div>
+    </AdminSection>}
+    {page === 'audit-logs' && <AdminSection title="Audit log" icon={<ClipboardList size={16} />}>
+      <div className="admin-table">{logs.slice(0, 40).map((log) => <div className="admin-row" key={log.id}><div><strong>{log.actionType}</strong><small>{log.description}</small></div></div>)}{!logs.length && <p className="empty-roster">No audit events recorded.</p>}</div>
+    </AdminSection>}
+    {page === 'settings' && <AdminSection title="Sudden death" icon={<Gavel size={16} />}>
+      <form className="stack-form" onSubmit={createSuddenDeath}><input placeholder="Round name" value={suddenForm.name} onChange={(event) => setSuddenForm({ ...suddenForm, name: event.target.value })} required /><div className="form-pair"><input type="number" min="1" placeholder="Duration" value={suddenForm.duration} onChange={(event) => setSuddenForm({ ...suddenForm, duration: event.target.value })} required /><input type="number" placeholder="Bonus points" value={suddenForm.bonusPoints} onChange={(event) => setSuddenForm({ ...suddenForm, bonusPoints: event.target.value })} /></div><input placeholder="Participant IDs, comma separated" value={suddenForm.participantIds} onChange={(event) => setSuddenForm({ ...suddenForm, participantIds: event.target.value })} required /><button className="gold-button" type="submit"><Plus size={14} /> Create round</button></form>
+      <div className="admin-table">{suddenDeath.map((round) => <div className="admin-row" key={round.id}><div><strong>{round.name}</strong><small>{round.duration} minutes · {round.status}</small></div>{round.status === 'PENDING' ? <button className="mini-button" onClick={() => void updateSuddenDeath(round.id, 'start')}>Start</button> : round.status === 'ACTIVE' ? <button className="mini-button" onClick={() => void updateSuddenDeath(round.id, 'end')}>End</button> : null}</div>)}</div>
+    </AdminSection>}
+  </div>
 }
 
 function AdminSection({ title, icon, children }: { title: string; icon: React.ReactNode; children: React.ReactNode }) {

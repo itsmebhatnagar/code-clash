@@ -55,6 +55,7 @@ model Round {
 model Problem {
   id           String   @id @default(uuid())
   title        String
+  position     Int      @default(0)
   description  String
   inputFormat  String
   outputFormat String
@@ -74,6 +75,7 @@ model Problem {
 model ProblemExample {
   id        String   @id @default(uuid())
   problemId String
+  position  Int      @default(0)
   input     String
   output    String
   explanation String?
@@ -99,7 +101,8 @@ model Submission {
   sourceCode    String
   status        String   // PENDING, ACCEPTED, WRONG_ANSWER, COMPILE_ERROR, RUNTIME_ERROR
   compilationTime Int?   // in ms; null for interpreted languages
-  executionTime Int?     // in ms
+  executionTime Int?     // total run time across executed test cases, in ms
+  maxTestCaseExecutionTime Int? // slowest individual test-case run time, in ms
   passedCases   Int      @default(0)
   totalCases    Int      @default(0)
   createdAt     DateTime @default(now())

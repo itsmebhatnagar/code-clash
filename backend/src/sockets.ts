@@ -1,3 +1,4 @@
+import { getRoundReadiness } from './services/contestService';
 import { Server, Socket } from 'socket.io';
 import jwt from 'jsonwebtoken';
 import { prisma } from './db';
@@ -67,14 +68,27 @@ export const setupSockets = (io: Server) => {
           const round = await prisma.$transaction(async (transaction) => {
             const target = await transaction.round.findUnique({
               where: { id: data.roundId },
-              include: { problems: { select: { id: true, testCases: { select: { id: true } } } } },
+              include: {
+                problems: {
+                  include: {
+                    examples: { select: { id: true } },
+                    testCases: { select: { isHidden: true } },
+                  },
+                },
+              },
             });
             if (!target) throw new Error('ROUND_NOT_FOUND');
             if (target.status !== 'PENDING') throw new Error('ROUND_CANNOT_START');
-            if (target.problems.length !== 1 || target.problems[0].testCases.length === 0) throw new Error('ROUND_NOT_READY');
+            const readiness = getRoundReadiness(target);
+            if (!readiness.ready) throw new Error(`ROUND_NOT_READY:${readiness.missing.join(',')}`);
 
             const activeRound = await transaction.round.findFirst({ where: { status: 'ACTIVE' } });
             if (activeRound) throw new Error('ANOTHER_ROUND_ACTIVE');
+
+            if (target.roundType === 'CODE_IN_DARK') {
+              const codeRun = await transaction.round.findFirst({ where: { roundType: 'CODE_RUN' } });
+              if (!codeRun || codeRun.status !== 'ENDED') throw new Error('CODE_RUN_NOT_ENDED');
+            }
 
             if (target.roundType === 'CODE_IN_DARK' && target.readingPeriodSeconds < 30) throw new Error('ROUND_READING_PERIOD_INVALID');
 
@@ -93,7 +107,7 @@ export const setupSockets = (io: Server) => {
             readingPeriodSeconds: round.readingPeriodSeconds,
           });
           await recordAuditLog(user.id, 'ROUND_START', `Round ${round.id} (${round.name}) started`);
-          scheduleRoundEnd(io, round.id, getRoundEndDelayMs(round.duration, round.readingPeriodSeconds));
+          scheduleRoundEnd(io, round.id, remainingRoundMs(round));
         } catch (error) {
           socket.emit('ERROR', { message: roundErrorMessage(error, 'Failed to start round') });
         }
@@ -115,8 +129,7 @@ export const setupSockets = (io: Server) => {
         try {
           await assertCurrentAdmin(user.id);
           const round = await transitionRound(data.roundId, 'PAUSED', 'ACTIVE');
-          const elapsed = round.startTime ? Date.now() - round.startTime.getTime() : 0;
-          scheduleRoundEnd(io, round.id, Math.max(getRoundEndDelayMs(round.duration, round.readingPeriodSeconds) - elapsed, 1_000));
+          scheduleRoundEnd(io, round.id, remainingRoundMs(round));
           io.emit('ROUND_STATE_UPDATE', { roundId: round.id, status: 'ACTIVE', startTime: round.startTime, duration: round.duration, roundType: round.roundType, readingPeriodSeconds: round.readingPeriodSeconds });
           await recordAuditLog(user.id, 'ROUND_START', `Round ${round.id} (${round.name}) resumed`);
         } catch (error) {
@@ -130,7 +143,7 @@ export const setupSockets = (io: Server) => {
           const round = await transitionRound(data.roundId, ['ACTIVE', 'PAUSED'], 'ENDED');
           clearRoundTimer(round.id);
           io.emit('ROUND_STATE_UPDATE', { roundId: round.id, status: 'ENDED' });
-          io.to('PARTICIPANT').emit('FORCE_SUBMIT', { roundId: round.id });
+          if (round.autoSubmitOnEnd) io.to('PARTICIPANT').emit('FORCE_SUBMIT', { roundId: round.id });
           await recordAuditLog(user.id, 'ROUND_END', `Round ${round.id} (${round.name}) ended`);
         } catch (error) {
           socket.emit('ERROR', { message: roundErrorMessage(error, 'Failed to end round') });
@@ -156,8 +169,7 @@ export const setupSockets = (io: Server) => {
 async function restoreActiveRoundTimers(io: Server) {
   const activeRounds = await prisma.round.findMany({ where: { status: 'ACTIVE' }, select: { id: true, startTime: true, duration: true, readingPeriodSeconds: true } });
   for (const round of activeRounds) {
-    const elapsed = round.startTime ? Date.now() - round.startTime.getTime() : 0;
-    scheduleRoundEnd(io, round.id, Math.max(getRoundEndDelayMs(round.duration, round.readingPeriodSeconds) - elapsed, 1_000));
+    scheduleRoundEnd(io, round.id, remainingRoundMs(round));
   }
 }
 
@@ -178,6 +190,9 @@ async function transitionRound(roundId: string, allowedStatuses: string | string
   if (!round) throw new Error('ROUND_NOT_FOUND');
   if (!allowed.includes(round.status)) throw new Error('ROUND_INVALID_TRANSITION');
 
+  // Pause freezes remaining contest time by shifting startTime forward on resume
+  // by the pause duration. Duration and reading period stay authoritative; the
+  // clock does not run while PAUSED, including across process restarts.
   const resumedStartTime = nextStatus === 'ACTIVE' && round.status === 'PAUSED' && round.pausedAt && round.startTime
     ? new Date(round.startTime.getTime() + (Date.now() - round.pausedAt.getTime()))
     : round.startTime;
@@ -193,13 +208,18 @@ function clearRoundTimer(roundId: string) {
   roundTimers.delete(roundId);
 }
 
+function remainingRoundMs(round: { startTime: Date | null; duration: number; readingPeriodSeconds: number }, now = Date.now()) {
+  const elapsed = round.startTime ? now - round.startTime.getTime() : 0;
+  return Math.max(getRoundEndDelayMs(round.duration, round.readingPeriodSeconds) - elapsed, 1_000);
+}
+
 function scheduleRoundEnd(io: Server, roundId: string, delay: number) {
   clearRoundTimer(roundId);
   roundTimers.set(roundId, setTimeout(async () => {
     try {
       const round = await transitionRound(roundId, 'ACTIVE', 'ENDED');
       io.emit('ROUND_STATE_UPDATE', { roundId: round.id, status: 'ENDED', automatic: true });
-      io.to('PARTICIPANT').emit('FORCE_SUBMIT', { roundId: round.id, automatic: true });
+      if (round.autoSubmitOnEnd) io.to('PARTICIPANT').emit('FORCE_SUBMIT', { roundId: round.id, automatic: true });
     } catch (error) {
       console.error('Automatic round end failed:', error);
     } finally {
@@ -210,12 +230,23 @@ function scheduleRoundEnd(io: Server, roundId: string, delay: number) {
 
 function roundErrorMessage(error: unknown, fallback: string) {
   const code = error instanceof Error ? error.message : '';
+  if (code.startsWith('ROUND_NOT_READY:')) {
+    const missing = code.slice('ROUND_NOT_READY:'.length).split(',');
+    const labels: Record<string, string> = {
+      'hidden-test-cases': 'at least one hidden judge test case',
+      'problem-1-hidden-test-cases': 'at least one hidden judge test case',
+      'problems': 'at least one coding problem',
+      examples: 'at least one public example',
+    };
+    const firstMissing = missing[0];
+    return firstMissing ? `Round is not ready: configure ${labels[firstMissing] || firstMissing.replaceAll('-', ' ')}.` : 'Round is not ready. Complete its problem setup.';
+  }
   const messages: Record<string, string> = {
     ADMIN_NOT_AUTHORIZED: 'Admin authorization is no longer valid',
     ROUND_NOT_FOUND: 'Round does not exist',
     ROUND_CANNOT_START: 'Only a pending round can be started',
-    ROUND_NOT_READY: 'Add one question and at least one test case before starting the round',
     ANOTHER_ROUND_ACTIVE: 'Another round is already active',
+    CODE_RUN_NOT_ENDED: 'Code Run must end before Code in the Dark can start',
     ROUND_READING_PERIOD_INVALID: 'Configure a valid reading period before starting Code in the Dark',
     ROUND_INVALID_TRANSITION: 'Round cannot transition from its current state'
   };

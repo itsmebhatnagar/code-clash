@@ -8,6 +8,7 @@ import { submissionsQueue } from '../queue';
 import { rateLimit } from '../middleware/rateLimit';
 import { generateDeviceFingerprint } from '../antiCheat';
 import { getRoundEndDelayMs, getRoundPhase } from '../services/contestService';
+import { supportedLanguageAliases } from '../judgeLanguages';
 
 export default function createContestRouter(io: Server) {
   const router = Router();
@@ -19,9 +20,11 @@ export default function createContestRouter(io: Server) {
       where: { status: 'ACTIVE' },
       include: {
         problems: {
+          orderBy: [{ position: 'asc' }, { id: 'asc' }],
           select: {
             id: true, title: true, description: true, inputFormat: true,
-            outputFormat: true, constraints: true, timeLimit: true, memoryLimit: true, points: true
+              outputFormat: true, constraints: true, timeLimit: true, memoryLimit: true, points: true,
+               examples: { select: { id: true, input: true, output: true, explanation: true, position: true }, orderBy: [{ position: 'asc' }, { id: 'asc' }] },
           }
         }
       }
@@ -42,9 +45,11 @@ export default function createContestRouter(io: Server) {
       where: { status: 'ACTIVE' },
       include: {
         problems: {
+          orderBy: [{ position: 'asc' }, { id: 'asc' }],
           select: {
             id: true, title: true, description: true, inputFormat: true,
-            outputFormat: true, constraints: true, timeLimit: true, memoryLimit: true, points: true
+            outputFormat: true, constraints: true, timeLimit: true, memoryLimit: true, points: true,
+             examples: { select: { id: true, input: true, output: true, explanation: true, position: true }, orderBy: [{ position: 'asc' }, { id: 'asc' }] },
           }
         }
       }
@@ -92,7 +97,7 @@ export default function createContestRouter(io: Server) {
     if (typeof sourceCode !== 'string' || sourceCode.length > 100_000) {
       throw new AppError(400, 'Source code must be under 100 KB');
     }
-    const supportedLanguages = ['c', 'cpp', 'c++', 'java', 'python', 'python3'];
+    const supportedLanguages = supportedLanguageAliases();
     if (typeof language !== 'string' || !supportedLanguages.includes(language.toLowerCase())) {
       throw new AppError(400, 'Supported languages are C, C++, Java, and Python');
     }
@@ -135,7 +140,8 @@ export default function createContestRouter(io: Server) {
         where: { id: submission.id }, 
         data: { status: 'QUEUE_FAILED' } 
       });
-      throw new AppError(503, 'Submission queue unavailable. Please try again.');
+      console.error('Submission queue error:', queueError);
+      throw new AppError(503, 'Submission queue unavailable. Ensure Redis 7 is running and try again.');
     }
 
     res.status(202).json(submission);

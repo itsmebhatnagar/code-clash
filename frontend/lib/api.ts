@@ -77,4 +77,16 @@ export async function submitCode(token: string, payload: { problemId: string; ro
   return { response, data: await response.json() as { id?: string; error?: string; status?: string } }
 }
 
+export async function getSubmissionResult(token: string, submissionId: string) {
+  try {
+    const response = await fetch(`${API_URL}/contest/submissions/${submissionId}`, { headers: authHeaders(token) })
+    if (!response.ok) {
+      return { response, data: null as null | { id?: string; status?: string; passedCases?: number; totalCases?: number; compilationTime?: number | null; executionTime?: number | null; maxTestCaseExecutionTime?: number | null; error?: string } }
+    }
+    return { response, data: await response.json() as { id?: string; status?: string; passedCases?: number; totalCases?: number; compilationTime?: number | null; executionTime?: number | null; maxTestCaseExecutionTime?: number | null; error?: string } }
+  } catch (error) {
+    return { response: null, data: null as null | { id?: string; status?: string; passedCases?: number; totalCases?: number; compilationTime?: number | null; executionTime?: number | null; maxTestCaseExecutionTime?: number | null; error?: string }, error: error as Error }
+  }
+}
+
 export type { SubmissionResult }

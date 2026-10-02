@@ -5,7 +5,7 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { useContestSocket } from '../../hooks/useContestSocket'
 import { useParticipantDashboard } from '../../hooks/useParticipantDashboard'
 import { useActivityPing } from '../../hooks/useActivityPing'
-import { submitCode } from '../../lib/api'
+import { getSubmissionResult, submitCode } from '../../lib/api'
 import type { SubmissionResult, User } from '../../lib/types'
 import { CodeEditor } from './CodeEditor'
 import { ProblemView } from './ProblemView'
@@ -13,24 +13,77 @@ import { ProblemView } from './ProblemView'
 export function ParticipantPanel({ user, token, onLogout }: { user: User; token: string; onLogout: () => void }) {
   const { dashboard, refresh } = useParticipantDashboard(token)
   const [language, setLanguage] = useState('c')
-  const [sourceCode, setSourceCode] = useState('')
+  const [drafts, setDrafts] = useState<Record<string, string>>({})
   const [selectedProblemId, setSelectedProblemId] = useState('')
-  const [submissionId, setSubmissionId] = useState<string | null>(null)
-  const [result, setResult] = useState<SubmissionResult | null>(null)
-  const [message, setMessage] = useState('')
+  const [problemRuns, setProblemRuns] = useState<Record<string, { submissionId: string | null; result: SubmissionResult | null; message: string }>>({})
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [now, setNow] = useState(Date.now())
   const activeRoundId = useRef<string | null>(null)
+  const submissionProblemIds = useRef<Record<string, string>>({})
+  const submissionPolls = useRef<Map<string, number>>(new Map())
   const submitRef = useRef<() => void>(() => {})
+
+  const round = dashboard.round
+  const stats = dashboard.stats
+  const selectedProblem = round?.problems.find((item) => item.id === selectedProblemId) || round?.problems[0]
+  const sourceCode = selectedProblem ? drafts[selectedProblem.id] ?? '' : ''
+  const problemRun = selectedProblem ? problemRuns[selectedProblem.id] : undefined
+  const submissionId = problemRun?.submissionId ?? null
+  const result = problemRun?.result ?? null
+  const message = problemRun?.message ?? ''
+
   const onResult = useCallback((data: SubmissionResult) => {
-    if (data.id !== submissionId) return
-    setResult(data); setMessage(''); refresh()
-  }, [refresh, submissionId])
+    const problemId = data.id ? submissionProblemIds.current[data.id] : undefined
+    if (!problemId || !data.id) return
+    submissionPolls.current.delete(data.id)
+    setProblemRuns((current) => ({ ...current, [problemId]: { ...current[problemId], result: data, message: '' } }))
+    refresh()
+  }, [refresh])
+
+  const pollSubmissionStatus = useCallback(async (submissionId: string, problemId: string) => {
+    const check = async () => {
+      try {
+        const { response, data } = await getSubmissionResult(token, submissionId)
+        if (!response || !data) {
+          const timeoutId = window.setTimeout(() => { void check() }, 1000)
+          submissionPolls.current.set(submissionId, timeoutId)
+          return
+        }
+
+        const nextStatus = data.status ?? 'PENDING'
+        if (nextStatus === 'PENDING') {
+          const timeoutId = window.setTimeout(() => { void check() }, 1000)
+          submissionPolls.current.set(submissionId, timeoutId)
+          return
+        }
+
+        submissionPolls.current.delete(submissionId)
+        const result: SubmissionResult = {
+          id: data.id,
+          status: nextStatus,
+          passedCases: data.passedCases ?? 0,
+          totalCases: data.totalCases ?? 0,
+          compilationTime: data.compilationTime ?? null,
+          executionTime: data.executionTime ?? undefined,
+          maxTestCaseExecutionTime: data.maxTestCaseExecutionTime ?? null,
+          error: data.error,
+        }
+        setProblemRuns((current) => ({ ...current, [problemId]: { ...current[problemId], result, message: '' } }))
+        refresh()
+      } catch {
+        const timeoutId = window.setTimeout(() => { void check() }, 1000)
+        submissionPolls.current.set(submissionId, timeoutId)
+      }
+    }
+
+    void check()
+  }, [refresh, token])
+
   useContestSocket(token, 'SUBMISSION_RESULT', onResult)
   useActivityPing(token)
 
   useEffect(() => {
-    setSelectedProblemId(''); setSubmissionId(null); setResult(null); setMessage('')
+    setSelectedProblemId(dashboard.round?.problems[0]?.id ?? '')
   }, [dashboard.round?.id])
 
   useEffect(() => {
@@ -45,28 +98,53 @@ export function ParticipantPanel({ user, token, onLogout }: { user: User; token:
   }, [])
   useContestSocket(token, 'FORCE_SUBMIT', onForceSubmit)
 
+  const submitCurrentRound = useCallback(() => {
+    submitRef.current()
+  }, [])
+
+  useEffect(() => {
+    return () => {
+      for (const timerId of submissionPolls.current.values()) {
+        window.clearTimeout(timerId)
+      }
+      submissionPolls.current.clear()
+    }
+  }, [])
+
   function selectProblem(id: string) {
-    setSelectedProblemId(id); setSubmissionId(null); setResult(null); setMessage('')
+    setSelectedProblemId(id)
   }
 
-  async function handleSubmit() {
+  async function handleSubmit(problemId = selectedProblemId) {
     if (isSubmitting) return
     const round = dashboard.round
-    const problem = round?.problems.find((item) => item.id === selectedProblemId) || round?.problems[0]
-    if (!round || !problem || !sourceCode.trim()) return setMessage('Write code before submitting.')
-    setIsSubmitting(true); setMessage('Submitting to judge worker...'); setResult(null)
+    const problem = round?.problems.find((item) => item.id === problemId)
+    const code = problem ? drafts[problem.id] ?? '' : ''
+    if (!round || !problem || !code.trim()) {
+      if (problem) setProblemRuns((current) => ({ ...current, [problem.id]: { ...current[problem.id], message: 'Write code before submitting.' } }))
+      return
+    }
+    setIsSubmitting(true)
+    setProblemRuns((current) => ({ ...current, [problem.id]: { ...current[problem.id], message: 'Submitting to judge worker...', result: null } }))
     try {
-      const { response, data } = await submitCode(token, { problemId: problem.id, roundId: round.id, language, sourceCode })
-      if (!response.ok || !data.id) return setMessage(data.error || 'Submission rejected')
-      setSubmissionId(data.id); setMessage('PENDING: queued for compilation and execution.')
-    } catch { setMessage('Network error. Could not submit code.') } finally { setIsSubmitting(false) }
+      const { response, data } = await submitCode(token, { problemId: problem.id, roundId: round.id, language, sourceCode: code })
+      if (!response.ok || !data.id) {
+        setProblemRuns((current) => ({ ...current, [problem.id]: { ...current[problem.id], message: data.error || 'Submission rejected' } }))
+        return
+      }
+      submissionProblemIds.current[data.id] = problem.id
+      setProblemRuns((current) => ({ ...current, [problem.id]: { submissionId: data.id!, result: null, message: 'PENDING: queued for compilation and execution.' } }))
+      void pollSubmissionStatus(data.id, problem.id)
+    } catch {
+      setProblemRuns((current) => ({ ...current, [problem.id]: { ...current[problem.id], message: 'Network error. Could not submit code.' } }))
+    } finally { setIsSubmitting(false) }
   }
 
-  submitRef.current = () => { void handleSubmit() }
+  submitRef.current = () => {
+    const problemIds = round?.problems.filter((problem) => drafts[problem.id]?.trim()).map((problem) => problem.id) ?? []
+    void (async () => { for (const problemId of problemIds) await handleSubmit(problemId) })()
+  }
 
-  const round = dashboard.round
-  const stats = dashboard.stats
-  const selectedProblem = round?.problems.find((item) => item.id === selectedProblemId) || round?.problems[0]
   const readingEndsAt = round?.readingEndsAt ? Date.parse(round.readingEndsAt) : 0
   const roundEndsAt = round?.endsAt ? Date.parse(round.endsAt) : 0
   const isReading = round?.roundType === 'CODE_IN_DARK' && Boolean(readingEndsAt) && now < readingEndsAt
@@ -80,9 +158,10 @@ export function ParticipantPanel({ user, token, onLogout }: { user: User; token:
     <div className="participant-layout">
       <section className={round ? 'participant-content' : 'participant-content waiting-content'}>
         {!round ? <section className="participant-empty"><ShieldCheck size={24} /><div><div className="form-kicker">CONTEST STATUS</div><h1>Awaiting the next round.</h1><p>The command deck will unlock when an administrator starts a round.</p></div></section> : <>
-          <section className="contest-overview"><div><div className="form-kicker">{round.roundType === 'CODE_IN_DARK' ? 'CODE IN THE DARK' : 'CODE RUN'}</div><h1>{isReading ? 'Read the problem' : isBlindCoding ? 'Code from memory' : 'The round is live'}</h1><p>{isReading ? 'The screen will blank when reading time ends.' : isBlindCoding ? 'Your screen is blank. Type your solution and submit with Ctrl+Enter.' : `${round.problems.length} question${round.problems.length === 1 ? '' : 's'} · ${round.duration} minutes`}</p></div><span className="overview-live">{isReading ? `READ ${readingSecondsLeft}s` : isRoundOver ? 'ENDED' : `${Math.floor(roundSecondsLeft / 60)}:${String(roundSecondsLeft % 60).padStart(2, '0')}`}</span></section>
+          <section className="contest-overview"><div><div className="form-kicker">{round.roundType === 'CODE_IN_DARK' ? 'CODE IN THE DARK' : 'CODE RUN'}</div><h1>{isReading ? 'Read the problems' : isBlindCoding ? 'Code from memory' : 'The round is live'}</h1><p>{isReading ? 'The screen will blank when reading time ends.' : isBlindCoding ? 'Your screen is blank. Type your solution and submit with Ctrl+Enter.' : `${round.problems.length} coding problem${round.problems.length === 1 ? '' : 's'} · ${round.duration} minutes`}</p></div><div className="overview-actions"><button className="gold-button" type="button" onClick={submitCurrentRound} disabled={isReading || isBlindCoding || isRoundOver || isSubmitting}>{isSubmitting ? 'SUBMITTING...' : 'SUBMIT ROUND'}</button><span className="overview-live">{isReading ? `READ ${readingSecondsLeft}s` : isRoundOver ? 'ENDED' : `${Math.floor(roundSecondsLeft / 60)}:${String(roundSecondsLeft % 60).padStart(2, '0')}`}</span></div></section>
+          {round.problems.length > 1 && !isBlindCoding && <nav className="participant-problem-selector" aria-label="Problems in this round"><span>PROBLEMS</span>{round.problems.map((problem, index) => <button className={problem.id === selectedProblem?.id ? 'active' : ''} type="button" key={problem.id} onClick={() => selectProblem(problem.id)}><b>{String(index + 1).padStart(2, '0')}</b><span>{problem.title}</span><small>{problem.points ?? 0} PTS</small></button>)}</nav>}
           {!isBlindCoding && <section className="participant-metrics"><div><span>PROBLEMS SOLVED</span><strong>{stats?.solved ?? 0} / {stats?.totalProblems ?? round.problems.length}</strong></div><div><span>CURRENT RANK</span><strong>{stats?.rank ? `#${stats.rank}` : '--'}</strong></div><div><span>ROUND SCORE</span><strong>{stats?.score ?? 0}</strong></div><div><span>PROBLEMS ATTEMPTED</span><strong>{stats?.attempted ?? 0} / {stats?.totalProblems ?? round.problems.length}</strong></div></section>}
-          <section className="participant-workspace"><div className="workspace-title"><span>{selectedProblem?.title || 'CURRENT QUESTION'}</span><div>{round.problems.length > 1 && !isBlindCoding && <select aria-label="Select question" value={selectedProblem?.id || ''} onChange={(event) => selectProblem(event.target.value)}>{round.problems.map((problem, index) => <option value={problem.id} key={problem.id}>{index + 1}. {problem.title}</option>)}</select>}<small>{language.toUpperCase()}</small><button className="workspace-action" type="button" onClick={handleSubmit} disabled={isReading || isBlindCoding || isRoundOver}>{isReading ? 'READING' : isBlindCoding ? 'SCREEN BLANK' : isRoundOver ? 'ROUND ENDED' : 'RUN CODE'}</button></div></div><div className="workspace-body">{selectedProblem ? <><ProblemView problem={selectedProblem} hidden={isBlindCoding} /><CodeEditor language={language} sourceCode={sourceCode} submissionId={submissionId} message={message} result={result} isSubmitting={isSubmitting} readOnly={Boolean(isReading) || isRoundOver} blindCoding={Boolean(isBlindCoding)} onLanguageChange={setLanguage} onSourceChange={setSourceCode} onSubmit={handleSubmit} /></> : <p className="empty-roster">No questions have been added to this round yet.</p>}</div></section>
+          <section className="participant-workspace"><div className="workspace-title"><span>{selectedProblem?.title || 'CURRENT PROBLEM'}</span><div><small>{language.toUpperCase()}</small></div></div><div className="workspace-body">{selectedProblem ? <><ProblemView problem={selectedProblem} hidden={isBlindCoding} /><CodeEditor language={language} sourceCode={sourceCode} submissionId={submissionId} message={message} result={result} isSubmitting={isSubmitting} readOnly={Boolean(isReading) || isRoundOver} blindCoding={Boolean(isBlindCoding)} onLanguageChange={setLanguage} onSourceChange={(code) => setDrafts((current) => ({ ...current, [selectedProblem.id]: code }))} onSubmit={() => { void handleSubmit() }} /></> : <p className="empty-roster">No coding problems have been added to this round yet.</p>}</div></section>
         </>}
       </section>
     </div>
