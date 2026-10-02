@@ -17,7 +17,7 @@ export class InfraError extends Error {
   }
 }
 
-type Language = 'c' | 'cpp' | 'java' | 'python' | 'javascript';
+type Language = 'c' | 'cpp' | 'java' | 'python';
 type PreparedCommand =
   | { command: string; args: string[]; compilationTime: number | null }
   | { compilationError: string; compilationTime: number; compilationTimedOut?: boolean };
@@ -91,7 +91,6 @@ export async function judgeSubmission(id: string) {
 
 export function normalizeLanguage(language: string): Language | null {
   const value = language.toLowerCase();
-  if (value === 'javascript' || value === 'js' || value === 'node') return 'javascript';
   if (value === 'python' || value === 'python3') return 'python';
   if (value === 'c') return 'c';
   if (value === 'cpp' || value === 'c++') return 'cpp';
@@ -100,10 +99,6 @@ export function normalizeLanguage(language: string): Language | null {
 }
 
 async function prepareCommand(language: Language, sourceCode: string, workspace: string, memoryLimitMb: number): Promise<PreparedCommand> {
-  if (language === 'javascript') {
-    await writeFile(path.join(workspace, 'Main.js'), sourceCode);
-    return { command: sandboxImage ? 'node' : process.execPath, args: [`--max-old-space-size=${Math.max(16, memoryLimitMb)}`, 'Main.js'], compilationTime: null };
-  }
   if (language === 'python') {
     await writeFile(path.join(workspace, 'main.py'), sourceCode);
     return { command: sandboxImage ? 'python3.14' : (process.platform === 'win32' ? 'python' : 'python3'), args: ['-u', 'main.py'], compilationTime: null };
@@ -112,7 +107,7 @@ async function prepareCommand(language: Language, sourceCode: string, workspace:
     const isCpp = language === 'cpp';
     await writeFile(path.join(workspace, isCpp ? 'main.cpp' : 'main.c'), sourceCode);
     const compileStarted = Date.now();
-    const compiled = await runProcess(isCpp ? 'g++' : 'gcc', [isCpp ? '-std=c++17' : '-std=c17', '-O2', isCpp ? 'main.cpp' : 'main.c', '-o', 'main'], workspace, '', 10_000, memoryLimitMb);
+    const compiled = await runProcess(isCpp ? 'g++' : 'gcc', [isCpp ? '-std=c++17' : '-std=c17', '-O2', isCpp ? 'main.cpp' : 'main.c', '-o', 'main', '-lm'], workspace, '', 10_000, memoryLimitMb);
     const compilationTime = Date.now() - compileStarted;
     if (compiled.exitCode !== 0 || compiled.timeout) return {
       compilationError: compiled.timeout ? 'Compilation time limit exceeded' : compiled.stderr || compiled.stdout || 'Compilation failed',
@@ -123,18 +118,18 @@ async function prepareCommand(language: Language, sourceCode: string, workspace:
   }
   await writeFile(path.join(workspace, 'Main.java'), sourceCode);
   const compileStarted = Date.now();
-  const compiled = await runProcess(sandboxImage ? 'javac' : 'javac', ['Main.java'], workspace, '', 10_000, memoryLimitMb);
+  const compiled = await runProcess('javac', ['-encoding', 'UTF-8', 'Main.java'], workspace, '', 30_000, memoryLimitMb);
   const compilationTime = Date.now() - compileStarted;
   if (compiled.exitCode !== 0 || compiled.timeout) return {
     compilationError: compiled.timeout ? 'Compilation time limit exceeded' : compiled.stderr || compiled.stdout || 'Compilation failed',
     compilationTime,
     compilationTimedOut: compiled.timeout,
   };
-  return { command: 'java', args: ['-Xmx' + Math.max(16, memoryLimitMb) + 'm', 'Main'], compilationTime };
+  const heapMb = Math.max(32, memoryLimitMb);
+  return { command: 'java', args: ['-XX:+UseSerialGC', `-Xms${heapMb}m`, `-Xmx${heapMb}m`, '-Dfile.encoding=UTF-8', 'Main'], compilationTime };
 }
 
 function runProcess(command: string, args: string[], cwd: string, input: string, timeoutMs: number, memoryLimitMb = 128): Promise<{ exitCode: number | null; stdout: string; stderr: string; timeout: boolean; outputLimit: boolean }> {
-  // Warning: Running without sandbox in production is insecure
   if (requireSandbox && !sandboxImage) {
       console.warn('Running code without sandbox because JUDGE_DOCKER_IMAGE is unset.');
   }
@@ -145,12 +140,14 @@ function runProcess(command: string, args: string[], cwd: string, input: string,
           'run', '--rm',
           '--network', 'none',
           '--read-only',
-          '--tmpfs', '/tmp:rw,nosuid,size=64m',
+          '--tmpfs', '/tmp:rw,nosuid,size=128m',
           '--mount', `type=bind,src=${cwd},dst=/workspace`,
           '--workdir', '/workspace',
-          '--memory', `${Math.max(16, memoryLimitMb)}m`,
+          '--memory', `${Math.max(32, memoryLimitMb)}m`,
+          '--memory-swap', `${Math.max(32, memoryLimitMb)}m`,
           '--cpus', '1',
-          '--pids-limit', '64',
+          '--pids-limit', '256',
+          '--ulimit', 'nofile=64:64',
           '--cap-drop', 'ALL',
           '--security-opt', 'no-new-privileges',
           sandboxImage, command, ...args,

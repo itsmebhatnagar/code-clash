@@ -98,12 +98,13 @@ Features include:
 
 ### Supported Languages
 
-| Language | Runtime |
-| ---------- | --------- |
-| C | GCC |
-| C++ | GCC / G++ |
-| Java | OpenJDK |
-| Python | Python 3 |
+| Language | Runtime | Version | Compilation Command | Execution Command |
+| ---------- | --------- | ------- | ------------------- | ----------------- |
+| C | GCC 16.2 | C17 | `gcc -std=c17 -O2 main.c -o main` | `./main` |
+| C++ | G++ 16.2 | C++17 (default), C++20, C++23 | `g++ -std=c++17 -O2 main.cpp -o main` | `./main` |
+| Java | OpenJDK 25 LTS | Java 25 | `javac Main.java` | `java -Xmx<mem>m Main` |
+| Python | CPython 3.14.8 | Python 3.14 | *(interpreted)* | `python3.14 -u main.py` |
+
 
 ## Contest Rules
 
@@ -111,9 +112,17 @@ The contest has exactly two rounds: **Code Run** and **Code in the Dark**. Parti
 
 In Code Run, participants can see the problem and their screen while coding. In Code in the Dark, the admin-configured reading period starts when the round starts. The problem is visible during that period. When it ends, the participant interface blanks the screen and keeps the editor focused for blind coding. Participants can submit without seeing the screen using `Ctrl+Enter`; submissions are also sent when the round ends.
 
-Each question has an admin-configured point value. A correct solution earns full points, a solution passing some test cases earns the same proportion of points as the fraction of passed cases, and wrong answers or compile errors earn zero. Only the best-scoring attempt per question counts; equal-scoring attempts use the faster execution time.
+Each question has an admin-configured point value. A correct solution earns full points, a solution passing some test cases earns the same proportion of points as the fraction of passed cases, and wrong answers or compile errors earn zero. 
 
-The final leaderboard orders by total points across both rounds, then by the sum of elapsed times from each round start to the participant's best-scoring submissions. Program execution duration is shown separately for review. Manual adjustments are separate and auditable; admins cannot overwrite automatically earned round scores.
+### Tie-Breaker
+In the event of a tie, the tie-breaker is the **fastest submission time**. The final leaderboard orders by total points across both rounds, then by the fastest overall submission time.
+
+### Rewards and Titles
+Code Clash awards the following prestigious titles to top performers:
+- **Code Phantom**: Winner of Code Run
+- **Dark Coder**: Winner of Code in the Dark
+- **Bug Slayer**: Participant who debugs fastest in the Haunted Round
+- **Champion**: Overall top scorer across both challenges
 
 ---
 
@@ -516,11 +525,14 @@ This provides an audit trail for post-contest review.
 
 ## Code Judge
 
-* Docker
-* GCC / G++
-* OpenJDK
-* Python 3
-* Node.js
+| Tool | Version | Source |
+| ---- | ------- | ------ |
+| Docker | host-provided | Docker Desktop / Docker Engine |
+| GCC / G++ | **16.2.0** | `docker.io/library/gcc:16.2` |
+| OpenJDK | **25.0.4.1 LTS** (Eclipse Temurin) | `docker.io/library/eclipse-temurin:25-jdk` |
+| CPython | **3.14.8** | Built from source: `python.org/ftp/python/3.14.8` |
+| Node.js | **24.21.0 LTS** | `docker.io/library/node:24.21.0` |
+
 
 ---
 
@@ -563,14 +575,14 @@ code-clash/
 
 Install:
 
-* Node.js 18+
+* Node.js 18+ (for running the backend)
 * npm
-* PostgreSQL
+* PostgreSQL (or SQLite for local development)
 * Redis
-* Docker
-* GCC / G++
-* Java JDK
-* Python 3
+* Docker 24+ (required for the judge sandbox)
+
+> **Note:** The judge image provides its own pinned compilers/runtimes (GCC 16.2, OpenJDK 25, CPython 3.14.8, Node.js 24.21.0). You do **not** need to install these on the host machine — only Docker is required.
+
 
 ---
 
@@ -627,7 +639,24 @@ ADMIN_PASSWORD="replace-with-a-strong-password"
 Build the judge image when you want submissions sandboxed locally:
 
 ```bash
+# From the backend/ directory:
 docker build -f judge.Dockerfile -t code-clash-judge:latest .
+```
+
+> **Note:** The build compiles Python 3.14.8 from source — this takes 5–10 minutes on first build but is fully cached on subsequent builds.
+
+Verify installed toolchain versions inside the image:
+
+```bash
+docker run --rm code-clash-judge:latest sh -c \
+  "gcc --version && g++ --version && java --version && python3.14 --version && node --version"
+```
+
+After building, update `.env` to enable the sandbox:
+
+```env
+JUDGE_DOCKER_IMAGE=code-clash-judge:latest
+JUDGE_REQUIRE_SANDBOX=true
 ```
 
 Start the backend API:

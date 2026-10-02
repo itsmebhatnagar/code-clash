@@ -4,10 +4,10 @@ import test, { before, after, describe } from 'node:test';
 import assert from 'node:assert/strict';
 
 describe('normalizeLanguage', () => {
-  test('recognises javascript aliases', () => {
-    assert.equal(normalizeLanguage('JS'), 'javascript');
-    assert.equal(normalizeLanguage('javascript'), 'javascript');
-    assert.equal(normalizeLanguage('node'), 'javascript');
+  test('recognises javascript as unsupported', () => {
+    assert.equal(normalizeLanguage('JS'), null);
+    assert.equal(normalizeLanguage('javascript'), null);
+    assert.equal(normalizeLanguage('node'), null);
   });
 
   test('recognises python aliases', () => {

@@ -3,7 +3,7 @@ import test from 'node:test';
 import { normalizeLanguage, normalizeOutput } from '../src/judgeWorker';
 
 test('normalizes supported judge language aliases', () => {
-  assert.equal(normalizeLanguage('JS'), 'javascript');
+  assert.equal(normalizeLanguage('JS'), null);
   assert.equal(normalizeLanguage('python3'), 'python');
   assert.equal(normalizeLanguage('c++'), 'cpp');
   assert.equal(normalizeLanguage('ruby'), null);

@@ -19,3 +19,11 @@ services:
     image: code-clash-judge:latest
     command: ["sleep", "infinity"]
     restart: unless-stopped
+    network_mode: none
+    read_only: true
+    tmpfs:
+      - /tmp:rw,nosuid,size=64m
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
