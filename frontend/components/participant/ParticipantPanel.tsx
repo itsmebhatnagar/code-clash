@@ -21,7 +21,7 @@ export function ParticipantPanel({ user, token, onLogout }: { user: User; token:
   const activeRoundId = useRef<string | null>(null)
   const submissionProblemIds = useRef<Record<string, string>>({})
   const submissionPolls = useRef<Map<string, number>>(new Map())
-  const submitRef = useRef<() => void>(() => {})
+  const submitRef = useRef<(forceCheat?: boolean) => void>(() => {})
 
   const round = dashboard.round
   const stats = dashboard.stats
@@ -119,6 +119,14 @@ export function ParticipantPanel({ user, token, onLogout }: { user: User; token:
   const [isRoundFinished, setIsRoundFinished] = useState(false)
   const [fullscreenWarning, setFullscreenWarning] = useState(false)
 
+  const readingEndsAt = round?.readingEndsAt ? Date.parse(round.readingEndsAt) : 0
+  const roundEndsAt = round?.endsAt ? Date.parse(round.endsAt) : 0
+  const isReading = round?.roundType === 'CODE_IN_DARK' && Boolean(readingEndsAt) && now < readingEndsAt
+  const isBlindCoding = round?.roundType === 'CODE_IN_DARK' && !isReading
+  const readingSecondsLeft = isReading ? Math.ceil((readingEndsAt - now) / 1000) : 0
+  const roundSecondsLeft = roundEndsAt ? Math.max(0, Math.ceil((roundEndsAt - now) / 1000)) : 0
+  const isRoundOver = Boolean(roundEndsAt) && roundSecondsLeft === 0
+
   // Anti-cheat & Fullscreen lock
   useEffect(() => {
     if (!dashboard.round || isRoundFinished || isRoundOver) return;
@@ -212,14 +220,6 @@ export function ParticipantPanel({ user, token, onLogout }: { user: User; token:
       }
     })()
   }
-
-  const readingEndsAt = round?.readingEndsAt ? Date.parse(round.readingEndsAt) : 0
-  const roundEndsAt = round?.endsAt ? Date.parse(round.endsAt) : 0
-  const isReading = round?.roundType === 'CODE_IN_DARK' && Boolean(readingEndsAt) && now < readingEndsAt
-  const isBlindCoding = round?.roundType === 'CODE_IN_DARK' && !isReading
-  const readingSecondsLeft = isReading ? Math.ceil((readingEndsAt - now) / 1000) : 0
-  const roundSecondsLeft = roundEndsAt ? Math.max(0, Math.ceil((roundEndsAt - now) / 1000)) : 0
-  const isRoundOver = Boolean(roundEndsAt) && roundSecondsLeft === 0
 
   return <main className="participant-shell">
     {fullscreenWarning && !isRoundFinished && !isRoundOver && round && (
