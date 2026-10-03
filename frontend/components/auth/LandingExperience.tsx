@@ -24,7 +24,7 @@ export function LandingExperience({ onEnter }: { onEnter: () => void }) {
           const totalFrames = Math.max(1, Math.round(video.duration * 24))
           desiredFrameRef.current = Math.min(totalFrames - 1, Math.round(progress * (totalFrames - 1)))
           const currentFrame = Math.round(video.currentTime * 24)
-          if (!video.seeking && currentFrame !== desiredFrameRef.current) {
+          if (!video.seeking && currentFrame !== desiredFrameRef.current) {``
             video.currentTime = desiredFrameRef.current / 24
           }
         }
@@ -60,7 +60,6 @@ export function LandingExperience({ onEnter }: { onEnter: () => void }) {
         </video>
         <div className="echona-vignette" aria-hidden="true" />
         <header className="echona-nav">
-          <a className="echona-home-link" href="#home">HOME</a>
           <a className="echona-wordmark" href="#home" aria-label="Echona 2K26, Treasure Voyage">
             <span>ECHONA 2K26</span>
             <small>TREASURE VOYAGE</small>

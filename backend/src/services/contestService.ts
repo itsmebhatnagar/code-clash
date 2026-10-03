@@ -685,10 +685,9 @@ export async function deleteRound(id: string, adminId: string) {
     include: { problems: { include: { _count: { select: { submissions: true } } } } },
   });
   if (!round) throw new AppError(404, 'Round not found');
-  if (round.status !== 'PENDING') throw new AppError(409, 'Only a pending round can be deleted');
-  if (round.problems.some((problem) => problem._count.submissions > 0)) throw new AppError(409, 'Round cannot be deleted because submissions already exist');
   await prisma.$transaction(async (transaction) => {
     const problemIds = round.problems.map((problem) => problem.id);
+    await transaction.submission.deleteMany({ where: { problemId: { in: problemIds } } });
     await transaction.testCase.deleteMany({ where: { problemId: { in: problemIds } } });
     await transaction.problemExample.deleteMany({ where: { problemId: { in: problemIds } } });
     await transaction.problem.deleteMany({ where: { roundId: id } });

@@ -117,6 +117,47 @@ export function ParticipantPanel({ user, token, onLogout }: { user: User; token:
   }
 
   const [isRoundFinished, setIsRoundFinished] = useState(false)
+  const [fullscreenWarning, setFullscreenWarning] = useState(false)
+
+  // Anti-cheat & Fullscreen lock
+  useEffect(() => {
+    if (!dashboard.round || isRoundFinished || isRoundOver) return;
+
+    const enforceFullscreen = async () => {
+      try {
+        if (!document.fullscreenElement && document.documentElement.requestFullscreen) {
+          await document.documentElement.requestFullscreen();
+          setFullscreenWarning(false);
+        }
+      } catch (err) {
+        setFullscreenWarning(true);
+      }
+    };
+
+    void enforceFullscreen();
+
+    const handleFullscreenChange = () => {
+      if (!document.fullscreenElement && !isRoundFinished && !isRoundOver) {
+        alert("⚠️ ANTI-CHEAT ALERT: You exited fullscreen mode! Your round has been forcefully submitted.");
+        submitRef.current(true);
+      }
+    };
+
+    const handleVisibilityChange = () => {
+      if (document.hidden && !isRoundFinished && !isRoundOver) {
+        alert("⚠️ ANTI-CHEAT ALERT: You switched tabs or minimized the window! Your round has been forcefully submitted.");
+        submitRef.current(true);
+      }
+    };
+
+    document.addEventListener('fullscreenchange', handleFullscreenChange);
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+
+    return () => {
+      document.removeEventListener('fullscreenchange', handleFullscreenChange);
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+    };
+  }, [dashboard.round?.id, isRoundFinished, isRoundOver]);
 
   async function submitSingleProblem(problemId: string, code: string) {
     const round = dashboard.round
@@ -152,10 +193,10 @@ export function ParticipantPanel({ user, token, onLogout }: { user: User; token:
     setIsSubmitting(false)
   }
 
-  submitRef.current = () => {
+  submitRef.current = (forceCheat = false) => {
     if (isSubmitting || isRoundFinished) return
     const problemIds = round?.problems.filter((problem) => drafts[problem.id]?.trim()).map((problem) => problem.id) ?? []
-    if (problemIds.length === 0) {
+    if (problemIds.length === 0 && !forceCheat) {
       alert("You haven't written any code yet!")
       return
     }
@@ -166,6 +207,9 @@ export function ParticipantPanel({ user, token, onLogout }: { user: User; token:
       }
       setIsSubmitting(false)
       setIsRoundFinished(true)
+      if (document.fullscreenElement) {
+        document.exitFullscreen().catch(() => {});
+      }
     })()
   }
 
@@ -178,6 +222,18 @@ export function ParticipantPanel({ user, token, onLogout }: { user: User; token:
   const isRoundOver = Boolean(roundEndsAt) && roundSecondsLeft === 0
 
   return <main className="participant-shell">
+    {fullscreenWarning && !isRoundFinished && !isRoundOver && round && (
+      <div 
+        onClick={() => {
+          document.documentElement.requestFullscreen().then(() => setFullscreenWarning(false)).catch(() => {});
+        }}
+        style={{ position: 'fixed', inset: 0, zIndex: 9999, background: 'rgba(0,0,0,0.9)', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', color: '#fff', textAlign: 'center', cursor: 'pointer' }}
+      >
+        <ShieldCheck size={64} style={{ color: 'var(--brand-gold)', marginBottom: '20px' }} />
+        <h1 style={{ fontSize: '32px', marginBottom: '10px' }}>ENTER FULLSCREEN TO BEGIN</h1>
+        <p style={{ fontSize: '18px', color: '#ccc' }}>Click anywhere on the screen to enter full-screen mode and start the round.</p>
+      </div>
+    )}
     <header className="participant-topbar"><div className="brand-lockup"><span className="brand-mark">◈</span><strong>CODE CLASH</strong></div>{round && <div className="participant-status"><span><span className="status-dot" /> LIVE COMPETITION</span><b>{round.name}</b></div>}<button className="icon-button" aria-label="Sign out" title="Sign out" onClick={onLogout}><LogOut size={16} /></button></header>
     <div className="participant-layout">
       <section className={round && !(isRoundFinished || isRoundOver) ? 'participant-content' : 'participant-content waiting-content'}>

@@ -40,11 +40,14 @@ export function AdminPanel({ user, token, onLogout }: { user: User; token: strin
 
   const shortcuts: Array<[string, AdminPage]> = [['PARTICIPANTS', 'participants'], ['WORKSTATIONS', 'workstations'], ['ROUNDS', 'rounds'], ['PROBLEMS', 'problems'], ['SUBMISSIONS', 'submissions'], ['EVALUATIONS', 'evaluations'], ['LEADERBOARD', 'leaderboard'], ['AUDIT LOGS', 'audit-logs'], ['SETTINGS', 'settings']]
   return <main className="admin-shell">
-    <header className="admin-topbar">
-      <strong>CODE CLASH <span>/</span> COMMAND CENTER</strong>
-      <div>
-        <span className={hasActiveRound ? 'admin-live-badge active' : 'admin-live-badge'}>{hasActiveRound ? 'ROUND ACTIVE' : isPaused ? 'ROUND PAUSED' : 'NO ROUND ACTIVE'}</span>
-        <button className="icon-button" aria-label="Sign out" title="Sign out" onClick={onLogout}><LogOut size={15} /></button>
+    <header className="participant-topbar">
+      <div className="brand-lockup">
+        <span className="brand-mark">◈</span>
+        <strong>CODE CLASH <span>/</span> COMMAND CENTER</strong>
+      </div>
+      <div className="participant-status">
+        <span><span className="status-dot" style={{ background: hasActiveRound ? '#46a89e' : isPaused ? '#d4af37' : '#66583e' }} /> {hasActiveRound ? 'ROUND ACTIVE' : isPaused ? 'ROUND PAUSED' : 'NO ROUND ACTIVE'}</span>
+        <button className="icon-button" aria-label="Sign out" title="Sign out" onClick={onLogout}><LogOut size={16} /></button>
       </div>
     </header>
     <div className="admin-layout">
@@ -64,7 +67,7 @@ export function AdminPanel({ user, token, onLogout }: { user: User; token: strin
         </section>
         <Metrics metrics={metrics} />
         {selectedTab === 'participants' && <section className="dashboard-card participant-roster"><div className="roster-heading"><ShieldCheck size={22} /><div><div className="form-kicker">REGISTERED PARTICIPANT ROSTER</div><h2>New signups appear automatically</h2></div></div><ParticipantTable participants={participants} /></section>}
-        <AdminControlCenter token={token} selectedTab={selectedTab} onTabChange={setSelectedTab} />
+        <AdminControlCenter key={selectedTab} token={token} selectedTab={selectedTab} onTabChange={setSelectedTab} />
       </section>
     </div>
   </main>
