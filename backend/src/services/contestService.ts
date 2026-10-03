@@ -603,8 +603,8 @@ export async function createRound(data: CreateRoundInput, adminId: string) {
   }
   if (data.autoSubmitOnEnd !== undefined && typeof data.autoSubmitOnEnd !== 'boolean') throw new AppError(400, 'autoSubmitOnEnd must be a boolean');
 
-  const existingRound = await prisma.round.findFirst({ where: { roundType } });
-  if (existingRound) throw new AppError(409, `${ROUND_TYPES[roundType].name} already exists`);
+  const existingRound = await prisma.round.findFirst({ where: { roundType, status: { not: 'ENDED' } } });
+  if (existingRound) throw new AppError(409, `An active or pending ${ROUND_TYPES[roundType].name} already exists`);
 
   const readingPeriodSeconds = roundType === 'CODE_IN_DARK'
     ? Number(data.readingPeriodSeconds ?? ROUND_TYPES.CODE_IN_DARK.readingPeriodSeconds)

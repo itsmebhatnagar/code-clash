@@ -25,7 +25,11 @@ export async function getAdminMetrics() {
       select: { participantId: true },
       distinct: ['participantId']
     }),
-    prisma.submission.count({ where: { status: 'ACCEPTED', problem: { round: { status: 'ACTIVE' } } } })
+    prisma.submission.findMany({
+      where: { status: 'ACCEPTED', problem: { round: { status: 'ACTIVE' } } },
+      select: { id: true },
+      distinct: ['participantId', 'problemId']
+    }).then(res => res.length)
   ]);
 
   const connected = participantConnections.size;

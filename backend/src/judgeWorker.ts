@@ -195,12 +195,16 @@ function runProcess(command: string, args: string[], cwd: string, input: string,
         ]
       : args;
 
-    const started = Date.now();
+    let started = Date.now();
     const child = spawn(sandboxImage ? 'docker' : command, processArgs, {
       cwd: sandboxImage ? undefined : cwd,
       shell: false,
       windowsHide: true,
       env: sandboxImage ? { PATH: process.env.PATH || '' } : { ...process.env },
+    });
+
+    child.on('spawn', () => {
+      started = Date.now();
     });
 
     let stdout = ''; let stderr = ''; let outputLimit = false; let settled = false; let timedOut = false;

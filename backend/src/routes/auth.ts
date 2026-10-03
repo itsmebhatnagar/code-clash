@@ -33,7 +33,7 @@ async function issueTokens(user: { id: string; role: string }) {
   const token = jwt.sign(
     { id: user.id, role: user.role }, 
     JWT_SECRET!, 
-    { expiresIn: '15m', issuer: 'code-clash', audience: 'code-clash-frontend' }
+    { expiresIn: '7d', issuer: 'code-clash', audience: 'code-clash-frontend' }
   );
 
   const refreshToken = crypto.randomBytes(40).toString('hex');

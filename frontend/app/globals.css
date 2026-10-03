@@ -179,7 +179,7 @@ input:focus { border-color: var(--gold); box-shadow: 0 0 0 1px var(--gold); }
 .overview-clock span { padding: 2px 5px; border: 1px solid #155d66; color: #5eb6aa; font: 7px 'Courier New', monospace; }
 .overview-clock strong { margin-top: 2px; color: var(--gold); font: 700 25px 'Courier New', monospace; }
 .overview-clock small { color: var(--gold); font: 7px 'Courier New', monospace; }
-.participant-metrics { display: grid; grid-template-columns: repeat(4, 1fr); gap: 7px; margin-top: 9px; }
+.participant-metrics { display: grid; grid-template-columns: repeat(2, 1fr); gap: 7px; margin-top: 9px; }
 .participant-metrics > div { min-height: 45px; padding: 9px; border: 1px solid #344250; border-radius: 4px; background: #162230; }
 .participant-metrics span { display: block; color: var(--gold); font: 7px 'Courier New', monospace; letter-spacing: .03em; }
 .participant-metrics strong { display: block; margin-top: 5px; color: var(--ink); font: 700 17px 'Courier New', monospace; }

@@ -84,6 +84,7 @@ export function ParticipantPanel({ user, token, onLogout }: { user: User; token:
 
   useEffect(() => {
     setSelectedProblemId(dashboard.round?.problems[0]?.id ?? '')
+    setIsRoundFinished(false)
   }, [dashboard.round?.id])
 
   useEffect(() => {
@@ -115,16 +116,13 @@ export function ParticipantPanel({ user, token, onLogout }: { user: User; token:
     setSelectedProblemId(id)
   }
 
-  async function handleSubmit(problemId = selectedProblemId) {
-    if (isSubmitting) return
+  const [isRoundFinished, setIsRoundFinished] = useState(false)
+
+  async function submitSingleProblem(problemId: string, code: string) {
     const round = dashboard.round
     const problem = round?.problems.find((item) => item.id === problemId)
-    const code = problem ? drafts[problem.id] ?? '' : ''
-    if (!round || !problem || !code.trim()) {
-      if (problem) setProblemRuns((current) => ({ ...current, [problem.id]: { ...current[problem.id], message: 'Write code before submitting.' } }))
-      return
-    }
-    setIsSubmitting(true)
+    if (!round || !problem || !code.trim()) return
+
     setProblemRuns((current) => ({ ...current, [problem.id]: { ...current[problem.id], message: 'Submitting to judge worker...', result: null } }))
     try {
       const { response, data } = await submitCode(token, { problemId: problem.id, roundId: round.id, language, sourceCode: code })
@@ -137,12 +135,38 @@ export function ParticipantPanel({ user, token, onLogout }: { user: User; token:
       void pollSubmissionStatus(data.id, problem.id)
     } catch {
       setProblemRuns((current) => ({ ...current, [problem.id]: { ...current[problem.id], message: 'Network error. Could not submit code.' } }))
-    } finally { setIsSubmitting(false) }
+    }
+  }
+
+  async function handleSubmit(problemId = selectedProblemId) {
+    if (isSubmitting || isRoundFinished) return
+    const round = dashboard.round
+    const problem = round?.problems.find((item) => item.id === problemId)
+    const code = problem ? drafts[problem.id] ?? '' : ''
+    if (!round || !problem || !code.trim()) {
+      if (problem) setProblemRuns((current) => ({ ...current, [problem.id]: { ...current[problem.id], message: 'Write code before submitting.' } }))
+      return
+    }
+    setIsSubmitting(true)
+    await submitSingleProblem(problemId, code)
+    setIsSubmitting(false)
   }
 
   submitRef.current = () => {
+    if (isSubmitting || isRoundFinished) return
     const problemIds = round?.problems.filter((problem) => drafts[problem.id]?.trim()).map((problem) => problem.id) ?? []
-    void (async () => { for (const problemId of problemIds) await handleSubmit(problemId) })()
+    if (problemIds.length === 0) {
+      alert("You haven't written any code yet!")
+      return
+    }
+    setIsSubmitting(true)
+    void (async () => { 
+      for (const problemId of problemIds) {
+        await submitSingleProblem(problemId, drafts[problemId]!)
+      }
+      setIsSubmitting(false)
+      setIsRoundFinished(true)
+    })()
   }
 
   const readingEndsAt = round?.readingEndsAt ? Date.parse(round.readingEndsAt) : 0
@@ -156,12 +180,29 @@ export function ParticipantPanel({ user, token, onLogout }: { user: User; token:
   return <main className="participant-shell">
     <header className="participant-topbar"><div className="brand-lockup"><span className="brand-mark">◈</span><strong>CODE CLASH</strong></div>{round && <div className="participant-status"><span><span className="status-dot" /> LIVE COMPETITION</span><b>{round.name}</b></div>}<button className="icon-button" aria-label="Sign out" title="Sign out" onClick={onLogout}><LogOut size={16} /></button></header>
     <div className="participant-layout">
-      <section className={round ? 'participant-content' : 'participant-content waiting-content'}>
-        {!round ? <section className="participant-empty"><ShieldCheck size={24} /><div><div className="form-kicker">CONTEST STATUS</div><h1>Awaiting the next round.</h1><p>The command deck will unlock when an administrator starts a round.</p></div></section> : <>
-          <section className="contest-overview"><div><div className="form-kicker">{round.roundType === 'CODE_IN_DARK' ? 'CODE IN THE DARK' : 'CODE RUN'}</div><h1>{isReading ? 'Read the problems' : isBlindCoding ? 'Code from memory' : 'The round is live'}</h1><p>{isReading ? 'The screen will blank when reading time ends.' : isBlindCoding ? 'Your screen is blank. Type your solution and submit with Ctrl+Enter.' : `${round.problems.length} coding problem${round.problems.length === 1 ? '' : 's'} · ${round.duration} minutes`}</p></div><div className="overview-actions"><button className="gold-button" type="button" onClick={submitCurrentRound} disabled={isReading || isBlindCoding || isRoundOver || isSubmitting}>{isSubmitting ? 'SUBMITTING...' : 'SUBMIT ROUND'}</button><span className="overview-live">{isReading ? `READ ${readingSecondsLeft}s` : isRoundOver ? 'ENDED' : `${Math.floor(roundSecondsLeft / 60)}:${String(roundSecondsLeft % 60).padStart(2, '0')}`}</span></div></section>
+      <section className={round && !(isRoundFinished || isRoundOver) ? 'participant-content' : 'participant-content waiting-content'}>
+        {!round ? <section className="participant-empty"><ShieldCheck size={24} /><div><div className="form-kicker">CONTEST STATUS</div><h1>Awaiting the next round.</h1><p>The command deck will unlock when an administrator starts a round.</p></div></section> : isRoundFinished || isRoundOver ? (
+          <section className="participant-empty">
+            <ShieldCheck size={48} style={{ color: 'var(--brand-gold)', marginBottom: '1rem' }} />
+            <div style={{ textAlign: 'center' }}>
+              <div className="form-kicker">ROUND COMPLETED</div>
+              <h1 style={{ fontSize: '2rem', marginBottom: '0.5rem' }}>Your round is submitted</h1>
+              <p style={{ color: 'var(--text-muted)' }}>Now wait for the second round.</p>
+              <div style={{ marginTop: '2rem', padding: '1.5rem', background: 'var(--surface-sunken)', borderRadius: '12px', border: '1px solid var(--border-color)' }}>
+                <div style={{ fontSize: '0.875rem', fontWeight: 600, color: 'var(--text-muted)', marginBottom: '0.25rem' }}>FINAL SCORE</div>
+                <div style={{ fontSize: '3rem', fontWeight: 800, color: 'var(--brand-gold)', lineHeight: 1 }}>{stats?.score ?? 0}</div>
+                <div style={{ marginTop: '1rem', display: 'flex', gap: '2rem', justifyContent: 'center' }}>
+                  <div><div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>SOLVED</div><strong style={{ fontSize: '1.25rem' }}>{stats?.solved ?? 0} / {stats?.totalProblems ?? round.problems.length}</strong></div>
+                  <div><div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>RANK</div><strong style={{ fontSize: '1.25rem' }}>{stats?.rank ? `#${stats.rank}` : '--'}</strong></div>
+                </div>
+              </div>
+            </div>
+          </section>
+        ) : <>
+          <section className="contest-overview"><div><div className="form-kicker">{round.roundType === 'CODE_IN_DARK' ? 'CODE IN THE DARK' : 'CODE RUN'}</div><h1>{isReading ? 'Read the problems' : isBlindCoding ? 'Code from memory' : 'The round is live'}</h1><p>{isReading ? 'The screen will blank when reading time ends.' : isBlindCoding ? 'Your screen is blank. Type your solution and submit with Ctrl+Enter.' : `${round.problems.length} coding problem${round.problems.length === 1 ? '' : 's'} · ${round.duration} minutes`}</p></div><div className="overview-actions"><button className="gold-button" type="button" onClick={submitCurrentRound} disabled={isReading || isBlindCoding || isRoundOver || isSubmitting || isRoundFinished}>{isRoundFinished ? 'ROUND SUBMITTED' : isSubmitting ? 'SUBMITTING...' : 'SUBMIT ROUND'}</button><span className="overview-live">{isReading ? `READ ${readingSecondsLeft}s` : isRoundOver ? 'ENDED' : `${Math.floor(roundSecondsLeft / 60)}:${String(roundSecondsLeft % 60).padStart(2, '0')}`}</span></div></section>
           {round.problems.length > 1 && !isBlindCoding && <nav className="participant-problem-selector" aria-label="Problems in this round"><span>PROBLEMS</span>{round.problems.map((problem, index) => <button className={problem.id === selectedProblem?.id ? 'active' : ''} type="button" key={problem.id} onClick={() => selectProblem(problem.id)}><b>{String(index + 1).padStart(2, '0')}</b><span>{problem.title}</span><small>{problem.points ?? 0} PTS</small></button>)}</nav>}
-          {!isBlindCoding && <section className="participant-metrics"><div><span>PROBLEMS SOLVED</span><strong>{stats?.solved ?? 0} / {stats?.totalProblems ?? round.problems.length}</strong></div><div><span>CURRENT RANK</span><strong>{stats?.rank ? `#${stats.rank}` : '--'}</strong></div><div><span>ROUND SCORE</span><strong>{stats?.score ?? 0}</strong></div><div><span>PROBLEMS ATTEMPTED</span><strong>{stats?.attempted ?? 0} / {stats?.totalProblems ?? round.problems.length}</strong></div></section>}
-          <section className="participant-workspace"><div className="workspace-title"><span>{selectedProblem?.title || 'CURRENT PROBLEM'}</span><div><small>{language.toUpperCase()}</small></div></div><div className="workspace-body">{selectedProblem ? <><ProblemView problem={selectedProblem} hidden={isBlindCoding} /><CodeEditor language={language} sourceCode={sourceCode} submissionId={submissionId} message={message} result={result} isSubmitting={isSubmitting} readOnly={Boolean(isReading) || isRoundOver} blindCoding={Boolean(isBlindCoding)} onLanguageChange={setLanguage} onSourceChange={(code) => setDrafts((current) => ({ ...current, [selectedProblem.id]: code }))} onSubmit={() => { void handleSubmit() }} /></> : <p className="empty-roster">No coding problems have been added to this round yet.</p>}</div></section>
+          {!isBlindCoding && <section className="participant-metrics"><div><span>PROBLEMS SOLVED</span><strong>{stats?.solved ?? 0} / {stats?.totalProblems ?? round.problems.length}</strong></div><div><span>PROBLEMS ATTEMPTED</span><strong>{stats?.attempted ?? 0} / {stats?.totalProblems ?? round.problems.length}</strong></div></section>}
+          <section className="participant-workspace"><div className="workspace-title"><span>{selectedProblem?.title || 'CURRENT PROBLEM'}</span><div><small>{language.toUpperCase()}</small></div></div><div className="workspace-body">{selectedProblem ? <><ProblemView problem={selectedProblem} hidden={isBlindCoding} /><CodeEditor language={language} sourceCode={sourceCode} submissionId={submissionId} message={message} result={result} isSubmitting={isSubmitting || isRoundFinished} readOnly={Boolean(isReading) || isRoundOver || isRoundFinished} blindCoding={Boolean(isBlindCoding)} onLanguageChange={setLanguage} onSourceChange={(code) => setDrafts((current) => ({ ...current, [selectedProblem.id]: code }))} onSubmit={() => { void handleSubmit() }} /></> : <p className="empty-roster">No coding problems have been added to this round yet.</p>}</div></section>
         </>}
       </section>
     </div>

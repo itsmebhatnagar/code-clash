@@ -4,6 +4,7 @@ import { useEffect, useState, type ReactNode } from 'react'
 import { ArrowDown, ArrowUp, Check, ClipboardList, Copy, Database, Gavel, Lock, Plus, Save, Trash2, Upload } from 'lucide-react'
 import { adminFetch, adminMutate } from '../../lib/api'
 import type { AdminProblem, AdminRound, AdminTestCase, Problem, ProblemExample } from '../../lib/types'
+import { useContestSocket } from '../../hooks/useContestSocket'
 import { ProblemView } from '../participant/ProblemView'
 
 type Page = 'rounds' | 'problems'
@@ -111,6 +112,7 @@ export function ContestSetup({ token, page, onNavigate, notify }: {
   }
 
   useEffect(() => { void load() }, [token])
+  useContestSocket(token, 'ROUND_STATE_UPDATE', () => { void load() })
 
   useEffect(() => {
     if (!selectedRound) return
@@ -412,11 +414,11 @@ export function ContestSetup({ token, page, onNavigate, notify }: {
       <section className="admin-section round-create-section">
         <div className="workflow-section-heading"><div><div className="form-kicker">CONTEST CONFIGURATION</div><h3>Create a round</h3></div><Gavel size={20} /></div>
         <form className="round-create-form" onSubmit={(event) => void createRound(event)}>
-          <label><span>Round type</span><select value={roundType} onChange={(event) => setRoundType(event.target.value as 'CODE_RUN' | 'CODE_IN_DARK')}><option value="CODE_RUN" disabled={rounds.some((round) => round.roundType === 'CODE_RUN')}>Code Run</option><option value="CODE_IN_DARK" disabled={rounds.some((round) => round.roundType === 'CODE_IN_DARK')}>Code in the Dark</option></select></label>
+          <label><span>Round type</span><select value={roundType} onChange={(event) => setRoundType(event.target.value as 'CODE_RUN' | 'CODE_IN_DARK')}><option value="CODE_RUN" disabled={rounds.some((round) => round.roundType === 'CODE_RUN' && round.status !== 'ENDED')}>Code Run</option><option value="CODE_IN_DARK" disabled={rounds.some((round) => round.roundType === 'CODE_IN_DARK' && round.status !== 'ENDED')}>Code in the Dark</option></select></label>
           <label><span>Duration (minutes)</span><input type="number" min="1" max="360" value={roundDuration} onChange={(event) => setRoundDuration(event.target.value)} required /></label>
           {roundType === 'CODE_IN_DARK' && <label><span>Reading period (seconds)</span><input type="number" min="30" max="600" value={readingPeriodSeconds} onChange={(event) => setReadingPeriodSeconds(event.target.value)} required /></label>}
           <label className="admin-checkbox"><input type="checkbox" checked={autoSubmitOnEnd} onChange={(event) => setAutoSubmitOnEnd(event.target.checked)} /><span>Auto-submit when the round ends</span></label>
-          <button className="gold-button" type="submit" disabled={rounds.some((round) => round.roundType === roundType)}><Plus size={15} /> Create round</button>
+          <button className="gold-button" type="submit" disabled={rounds.some((round) => round.roundType === roundType && round.status !== 'ENDED')}><Plus size={15} /> Create round</button>
         </form>
       </section>
 
@@ -452,7 +454,7 @@ export function ContestSetup({ token, page, onNavigate, notify }: {
           </details>
           <div className="round-danger-actions">
             {(selectedRound.status === 'ENDED' || selectedRound.status === 'PAUSED') && <button className="mini-button" type="button" onClick={() => void resetRound(selectedRound)}><Gavel size={14} /> Reset round</button>}
-            {selectedRound.status === 'PENDING' && <button className="mini-button danger" type="button" onClick={() => void deleteRound(selectedRound)}><Trash2 size={14} /> Delete round</button>}
+            <button className="mini-button danger" type="button" onClick={() => void deleteRound(selectedRound)}><Trash2 size={14} /> Delete round</button>
             {locked && <p><Lock size={14} /> Problem configuration is locked while this round is {selectedRound.status.toLowerCase()}.</p>}
           </div>
         </section>}
