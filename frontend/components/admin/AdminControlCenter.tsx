@@ -1,7 +1,7 @@
 'use client'
 
 import { useEffect, useState } from 'react'
-import { ClipboardList, Database, Gavel, Monitor, Plus, RefreshCw, Settings, ShieldCheck, Trash2, Unlock, UserCheck, Users, X } from 'lucide-react'
+import { ClipboardList, Compass, Database, Gavel, Monitor, Plus, RefreshCw, Settings, ShieldCheck, Trash2, Unlock, UserCheck, Users, X } from 'lucide-react'
 import { adminFetch, adminMutate, getLeaderboard } from '../../lib/api'
 import type { AdminAuditLog, AdminEvaluation, AdminProblem, AdminRound, AdminSetting, AdminSubmission, AdminWorkstation, LeaderboardEntry, Participant, SuddenDeathRound, UserRole } from '../../lib/types'
 import { ContestSetup as ContestSetupWorkflow } from './ContestSetup'
@@ -10,15 +10,15 @@ export type AdminPage = 'participants' | 'workstations' | 'rounds' | 'problems' 
 type Message = { kind: 'success' | 'error'; text: string } | null
 
 const pageDetails: Record<AdminPage, { title: string; description: string; section: string; Icon: typeof Users }> = {
-  participants: { title: 'Participants', description: 'Review registrations and manage competitor access.', section: 'OPERATIONS', Icon: Users },
-  workstations: { title: 'Workstations', description: 'Assign and release competition stations.', section: 'OPERATIONS', Icon: Monitor },
-  rounds: { title: 'Rounds', description: 'Configure contest rounds and their timing.', section: 'CONTEST SETUP', Icon: Gavel },
-  problems: { title: 'Problems', description: 'Create questions, examples, and scoring data.', section: 'CONTEST SETUP', Icon: Database },
-  submissions: { title: 'Submissions', description: 'Inspect submitted solutions and execution results.', section: 'REVIEW DESK', Icon: ClipboardList },
-  evaluations: { title: 'Evaluations', description: 'Manage final scoring, adjustments, and locks.', section: 'REVIEW DESK', Icon: ShieldCheck },
-  leaderboard: { title: 'Leaderboard', description: 'Review current standings and tie-break details.', section: 'REVIEW DESK', Icon: ShieldCheck },
-  'audit-logs': { title: 'Audit logs', description: 'Trace administrator actions across the contest.', section: 'SYSTEM', Icon: ClipboardList },
-  settings: { title: 'Settings', description: 'Manage contest settings, roles, and sudden-death rounds.', section: 'SYSTEM', Icon: Settings }
+  participants: { title: 'Crew Manifest', description: 'Review registrations and manage pirate access.', section: 'OPERATIONS', Icon: Users },
+  workstations: { title: 'Stations', description: 'Assign and release ship stations.', section: 'OPERATIONS', Icon: Monitor },
+  rounds: { title: 'Voyages', description: 'Configure contest voyages and their duration.', section: 'VOYAGE SETUP', Icon: Gavel },
+  problems: { title: 'Challenges', description: 'Create trials, examples, and bounty data.', section: 'VOYAGE SETUP', Icon: Database },
+  submissions: { title: 'Captain Logs', description: 'Inspect submitted logs and execution results.', section: 'REVIEW DECK', Icon: ClipboardList },
+  evaluations: { title: 'Appraisals', description: 'Manage final bounties, adjustments, and locks.', section: 'REVIEW DECK', Icon: ShieldCheck },
+  leaderboard: { title: 'Bounty Board', description: 'Review current standings and tie-break details.', section: 'REVIEW DECK', Icon: ShieldCheck },
+  'audit-logs': { title: 'Ship Logs', description: 'Trace captain actions across the voyage.', section: 'SYSTEM', Icon: ClipboardList },
+  settings: { title: 'Quarters', description: 'Manage ship settings, roles, and sudden-death events.', section: 'SYSTEM', Icon: Settings }
 }
 
 export function AdminControlCenter({ token, selectedTab = 'participants', onTabChange }: { token: string; selectedTab?: AdminPage; onTabChange?: (page: AdminPage) => void }) {
@@ -73,7 +73,7 @@ function Operations({ token, notify }: { token: string; notify: (message: Messag
     notify({ kind: 'success', text: 'Workstation released.' }); void load()
   }
 
-  return <div className="admin-grid two-columns"><AdminSection title="Participant access" icon={<Users size={16} />}><div className="admin-table">{loading ? <p>Loading participants...</p> : participants.map((participant) => <div className="admin-row" key={participant.id}><div><strong>{participant.name}</strong><small>{participant.email} · {participant.collegeId || 'No college ID'}</small></div><b>{participant.status}</b><div className="row-actions"><button className="mini-button" onClick={() => void changeStatus(participant.id, 'CHECKED_IN')}><UserCheck size={13} /> Check in</button><button className="mini-button danger" onClick={() => void changeStatus(participant.id, 'DISQUALIFIED')}><X size={13} /> Disqualify</button></div></div>)}</div></AdminSection><AdminSection title="Workstations" icon={<Monitor size={16} />}><form className="inline-form" onSubmit={assignWorkstation}><input aria-label="PC number" placeholder="PC-01" value={pcNumber} onChange={(event) => setPcNumber(event.target.value)} required /><select aria-label="Participant" value={participantId} onChange={(event) => setParticipantId(event.target.value)} required><option value="">Select participant</option>{participants.filter((participant) => participant.status !== 'DISQUALIFIED').map((participant) => <option value={participant.id} key={participant.id}>{participant.name}</option>)}</select><button className="gold-button" type="submit"><Plus size={14} /> Assign</button></form><div className="admin-table">{workstations.map((workstation) => <div className="admin-row" key={workstation.id}><div><strong>{workstation.pcNumber}</strong><small>{workstation.participant?.name || 'Unassigned'}</small></div><button className="mini-button" onClick={() => void releaseWorkstation(workstation.id)}>Release</button></div>)}{!workstations.length && <p className="empty-roster">No workstations configured.</p>}</div></AdminSection></div>
+  return <div className="admin-grid two-columns"><AdminSection title="Crew access" icon={<Users size={16} />}><div className="admin-table">{loading ? <div className="loading-state"><Compass className="compass-icon" size={24} /> <span>Gathering crew manifest...</span></div> : participants.map((participant) => <div className="admin-row" key={participant.id}><div><strong>{participant.name}</strong><small>{participant.email} · {participant.collegeId || 'No college ID'}</small></div><b>{participant.status}</b><div className="row-actions"><button className="mini-button" onClick={() => void changeStatus(participant.id, 'CHECKED_IN')}><UserCheck size={13} /> Check in</button><button className="mini-button danger" onClick={() => void changeStatus(participant.id, 'DISQUALIFIED')}><X size={13} /> Disqualify</button></div></div>)}</div></AdminSection><AdminSection title="Stations" icon={<Monitor size={16} />}><form className="inline-form" onSubmit={assignWorkstation}><input aria-label="PC number" placeholder="PC-01" value={pcNumber} onChange={(event) => setPcNumber(event.target.value)} required /><select aria-label="Participant" value={participantId} onChange={(event) => setParticipantId(event.target.value)} required><option value="">Select pirate</option>{participants.filter((participant) => participant.status !== 'DISQUALIFIED').map((participant) => <option value={participant.id} key={participant.id}>{participant.name}</option>)}</select><button className="gold-button" type="submit"><Plus size={14} /> Assign</button></form><div className="admin-table">{workstations.map((workstation) => <div className="admin-row" key={workstation.id}><div><strong>{workstation.pcNumber}</strong><small>{workstation.participant?.name || 'Unassigned'}</small></div><button className="mini-button" onClick={() => void releaseWorkstation(workstation.id)}>Release</button></div>)}{!workstations.length && <p className="empty-roster">No stations configured.</p>}</div></AdminSection></div>
 }
 
 function ReviewDesk({ token, notify }: { token: string; notify: (message: Message) => void }) {

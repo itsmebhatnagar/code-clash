@@ -38,7 +38,7 @@ export function AdminPanel({ user, token, onLogout }: { user: User; token: strin
   const isPaused = selectedRound?.status === 'PAUSED'
   const canStartRound = selectedRound?.status === 'PENDING' && selectedRound.readiness?.ready === true
 
-  const shortcuts: Array<[string, AdminPage]> = [['PARTICIPANTS', 'participants'], ['WORKSTATIONS', 'workstations'], ['ROUNDS', 'rounds'], ['PROBLEMS', 'problems'], ['SUBMISSIONS', 'submissions'], ['EVALUATIONS', 'evaluations'], ['LEADERBOARD', 'leaderboard'], ['AUDIT LOGS', 'audit-logs'], ['SETTINGS', 'settings']]
+  const shortcuts: Array<[string, AdminPage]> = [['CREW MANIFEST', 'participants'], ['STATIONS', 'workstations'], ['VOYAGES', 'rounds'], ['CHALLENGES', 'problems'], ['CAPTAIN LOGS', 'submissions'], ['APPRAISALS', 'evaluations'], ['BOUNTY BOARD', 'leaderboard'], ['SHIP LOGS', 'audit-logs'], ['QUARTERS', 'settings']]
   return <main className="admin-shell">
     <header className="participant-topbar">
       <div className="brand-lockup">

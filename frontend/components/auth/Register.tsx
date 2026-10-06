@@ -32,40 +32,45 @@ export function Register({ onSignIn }: { onSignIn: () => void }) {
   }
 
   return (
-    <div className="register-wrap premium-card">
-      <div className="form-kicker">PARTICIPANT REGISTRATION</div>
-      <h2>Join the crew.</h2>
-      <p className="form-subtitle">Create your station credentials to enter the contest.</p>
-      
-      <form className="register-grid" onSubmit={handleSubmit} autoComplete="off">
-        {fields.map(([key, label, placeholder, Icon]) => (
-          <label key={key} className="input-group">
-            <span>{label}</span>
-            <div className="input-wrapper">
-              <Icon size={16} className="input-icon" />
-              <input 
-                type={key === 'email' ? 'email' : key === 'password' ? 'password' : 'text'} 
-                autoComplete={key === 'password' ? 'new-password' : 'off'} 
-                placeholder={placeholder} 
-                required={key === 'name' || key === 'email' || key === 'password'} 
-                value={formData[key]} 
-                onChange={(event) => setFormData({ ...formData, [key]: event.target.value })} 
-              />
+    <div className="premium-card-wrapper">
+      <img src="/woodenscrool.png" alt="" className="scroll-image" draggable="false" />
+      <div className="scroll-safe-area">
+        <div className="register-wrap">
+          <div className="form-kicker">PARTICIPANT REGISTRATION</div>
+          <h2>Join the crew.</h2>
+          <p className="form-subtitle">Create your station credentials to enter the contest.</p>
+          
+          <form className="register-grid" onSubmit={handleSubmit} autoComplete="off">
+            {fields.map(([key, label, placeholder, Icon]) => (
+              <label key={key} className="input-group">
+                <span>{label}</span>
+                <div className="input-wrapper">
+                  <Icon size={16} className="input-icon" />
+                  <input 
+                    type={key === 'email' ? 'email' : key === 'password' ? 'password' : 'text'} 
+                    autoComplete={key === 'password' ? 'new-password' : 'off'} 
+                    placeholder={placeholder} 
+                    required={key === 'name' || key === 'email' || key === 'password'} 
+                    value={formData[key]} 
+                    onChange={(event) => setFormData({ ...formData, [key]: event.target.value })} 
+                  />
+                </div>
+              </label>
+            ))}
+            
+            <div style={{ display: 'flex', gap: '8px', gridColumn: '1 / -1', marginTop: '6px' }}>
+              <button className="gold-button glow-effect" type="submit" style={{ flex: 1, margin: 0, padding: '0 8px', fontSize: '12px', minHeight: '40px' }}>
+                CREATE ACCOUNT
+              </button>
+              <button className="back-button" type="button" onClick={onSignIn} style={{ flex: 1, margin: 0, padding: '0 8px', fontSize: '12px', minHeight: '40px' }}>
+                BACK TO SIGN IN
+              </button>
             </div>
-          </label>
-        ))}
-        
-        <div className="register-actions">
-          <button className="gold-button glow-effect" type="submit">
-            CREATE ACCOUNT <ArrowRight size={15} />
-          </button>
-          <button className="back-button" type="button" onClick={onSignIn}>
-            <ArrowLeft size={14} /> Back to sign in
-          </button>
+          </form>
+          
+          {message && <p className="form-message" role="status" style={{ background: 'rgba(255,255,255,0.5)', color: 'var(--mahogany-dark)', fontWeight: 700, padding: '8px', borderRadius: '4px', textAlign: 'center', border: '1px solid rgba(139, 94, 52, 0.3)', marginTop: '12px' }}>{message}</p>}
         </div>
-      </form>
-      
-      {message && <p className="form-message">{message}</p>}
+      </div>
     </div>
   )
 }

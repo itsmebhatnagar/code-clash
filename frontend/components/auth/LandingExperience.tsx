@@ -13,42 +13,43 @@ export function LandingExperience({ onEnter }: { onEnter: () => void }) {
     const video = videoRef.current
     if (!stage || !video || window.matchMedia('(prefers-reduced-motion: reduce)').matches) return
 
-    let frame = 0
-    const updateFrame = () => {
-      cancelAnimationFrame(frame)
-      frame = requestAnimationFrame(() => {
-        const distance = stage.offsetHeight - window.innerHeight
-        const progress = distance > 0 ? Math.min(1, Math.max(0, -stage.getBoundingClientRect().top / distance)) : 0
-        stage.style.setProperty('--scroll-progress', String(progress))
-        if (Number.isFinite(video.duration) && video.duration > 0) {
-          const totalFrames = Math.max(1, Math.round(video.duration * 24))
-          desiredFrameRef.current = Math.min(totalFrames - 1, Math.round(progress * (totalFrames - 1)))
-          const currentFrame = Math.round(video.currentTime * 24)
-          if (!video.seeking && currentFrame !== desiredFrameRef.current) {``
-            video.currentTime = desiredFrameRef.current / 24
-          }
+    let animationFrameId = 0
+    let targetTime = 0
+
+    const updateScroll = () => {
+      const distance = stage.offsetHeight - window.innerHeight
+      const progress = distance > 0 ? Math.min(1, Math.max(0, -stage.getBoundingClientRect().top / distance)) : 0
+      stage.style.setProperty('--scroll-progress', String(progress))
+      
+      if (Number.isFinite(video.duration) && video.duration > 0) {
+        // Prevent snapping to the very end to avoid looping/stopping issues
+        targetTime = progress * video.duration * 0.99 
+      }
+    }
+
+    const renderLoop = () => {
+      if (Number.isFinite(video.duration) && video.duration > 0 && !video.seeking) {
+        const diff = targetTime - video.currentTime
+        if (Math.abs(diff) > 0.01) {
+          video.currentTime += diff * 0.08 // 0.08 provides that buttery Apple smoothness
         }
-      })
+      }
+      animationFrameId = requestAnimationFrame(renderLoop)
     }
 
-    if (video.readyState >= 1) {
-      updateFrame()
-    }
+    if (video.readyState >= 1) updateScroll()
+    video.addEventListener('loadedmetadata', updateScroll)
+    
+    renderLoop()
 
-    video.addEventListener('loadedmetadata', updateFrame)
-    video.addEventListener('loadeddata', updateFrame)
-    video.addEventListener('canplay', updateFrame)
-    video.addEventListener('seeked', updateFrame)
-    window.addEventListener('scroll', updateFrame, { passive: true })
-    window.addEventListener('resize', updateFrame)
+    window.addEventListener('scroll', updateScroll, { passive: true })
+    window.addEventListener('resize', updateScroll)
+
     return () => {
-      cancelAnimationFrame(frame)
-      video.removeEventListener('loadedmetadata', updateFrame)
-      video.removeEventListener('loadeddata', updateFrame)
-      video.removeEventListener('canplay', updateFrame)
-      video.removeEventListener('seeked', updateFrame)
-      window.removeEventListener('scroll', updateFrame)
-      window.removeEventListener('resize', updateFrame)
+      cancelAnimationFrame(animationFrameId)
+      video.removeEventListener('loadedmetadata', updateScroll)
+      window.removeEventListener('scroll', updateScroll)
+      window.removeEventListener('resize', updateScroll)
     }
   }, [])
 

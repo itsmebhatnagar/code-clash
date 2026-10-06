@@ -51,7 +51,7 @@ export default function Page() {
   }, [showAuth])
 
   if (loading && introState === 'finished') {
-    return <div style={{ minHeight: '100vh', background: '#1a1714' }} />
+    return <div style={{ minHeight: '100vh', background: '#050d1a' }} />
   }
 
   let mainContent = null
@@ -72,7 +72,7 @@ export default function Page() {
       {mainContent}
       {introState !== 'finished' && (
         <div style={{ 
-          position: 'fixed', inset: 0, zIndex: 9999, background: '#1a1714',
+          position: 'fixed', inset: 0, zIndex: 9999, background: '#050d1a',
           opacity: introState === 'fading' ? 0 : 1,
           transition: 'opacity 1.2s ease-in-out',
           pointerEvents: introState === 'fading' ? 'none' : 'auto',

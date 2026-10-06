@@ -237,19 +237,42 @@ export function ParticipantPanel({ user, token, onLogout }: { user: User; token:
     <header className="participant-topbar"><div className="brand-lockup"><span className="brand-mark">◈</span><strong>CODE CLASH</strong></div>{round && <div className="participant-status"><span><span className="status-dot" /> LIVE COMPETITION</span><b>{round.name}</b></div>}<button className="icon-button" aria-label="Sign out" title="Sign out" onClick={onLogout}><LogOut size={16} /></button></header>
     <div className="participant-layout">
       <section className={round && !(isRoundFinished || isRoundOver) ? 'participant-content' : 'participant-content waiting-content'}>
-        {!round ? <section className="participant-empty"><ShieldCheck size={24} /><div><div className="form-kicker">CONTEST STATUS</div><h1>Awaiting the next round.</h1><p>The command deck will unlock when an administrator starts a round.</p></div></section> : isRoundFinished || isRoundOver ? (
-          <section className="participant-empty">
-            <ShieldCheck size={48} style={{ color: 'var(--brand-gold)', marginBottom: '1rem' }} />
-            <div style={{ textAlign: 'center' }}>
-              <div className="form-kicker">ROUND COMPLETED</div>
-              <h1 style={{ fontSize: '2rem', marginBottom: '0.5rem' }}>Your round is submitted</h1>
-              <p style={{ color: 'var(--text-muted)' }}>Now wait for the second round.</p>
-              <div style={{ marginTop: '2rem', padding: '1.5rem', background: 'var(--surface-sunken)', borderRadius: '12px', border: '1px solid var(--border-color)' }}>
-                <div style={{ fontSize: '0.875rem', fontWeight: 600, color: 'var(--text-muted)', marginBottom: '0.25rem' }}>FINAL SCORE</div>
-                <div style={{ fontSize: '3rem', fontWeight: 800, color: 'var(--brand-gold)', lineHeight: 1 }}>{stats?.score ?? 0}</div>
-                <div style={{ marginTop: '1rem', display: 'flex', gap: '2rem', justifyContent: 'center' }}>
-                  <div><div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>SOLVED</div><strong style={{ fontSize: '1.25rem' }}>{stats?.solved ?? 0} / {stats?.totalProblems ?? round.problems.length}</strong></div>
-                  <div><div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>RANK</div><strong style={{ fontSize: '1.25rem' }}>{stats?.rank ? `#${stats.rank}` : '--'}</strong></div>
+        {!round ? (
+          <section className="participant-empty premium-card-wrapper" style={{ margin: 'auto' }}>
+            <img src="/woodenscrool.png" alt="" className="scroll-image" draggable="false" />
+            <div className="scroll-safe-area" style={{ padding: '0 24px' }}>
+              <div className="form-wrap" style={{ textAlign: 'center', maxWidth: '320px', margin: 'auto' }}>
+                <ShieldCheck size={48} style={{ color: 'var(--mahogany)', margin: '0 auto 16px' }} />
+                <div className="form-kicker">THE CALM BEFORE THE STORM</div>
+                <h1 style={{ color: 'var(--mahogany-dark)', fontSize: '28px', margin: '12px 0 16px', fontFamily: 'var(--font-heading)', textShadow: '0 1px 1px rgba(255,255,255,0.5)', lineHeight: 1.1, wordWrap: 'break-word' }}>AWAITING ORDERS</h1>
+                <p className="form-subtitle" style={{ color: 'var(--mahogany-dark)', fontWeight: 600, fontSize: '15px' }}>The captain's log is currently sealed. Stand by until the next voyage begins.</p>
+              </div>
+            </div>
+          </section>
+        ) : isRoundFinished || isRoundOver ? (
+          <section className="participant-empty premium-card-wrapper" style={{ margin: 'auto' }}>
+            <img src="/woodenscrool.png" alt="" className="scroll-image" draggable="false" />
+            <div className="scroll-safe-area" style={{ padding: '0 24px' }}>
+              <div className="form-wrap" style={{ textAlign: 'center', maxWidth: '320px', margin: 'auto' }}>
+                <ShieldCheck size={48} style={{ color: 'var(--mahogany)', margin: '0 auto 16px' }} />
+                <div className="form-kicker">VOYAGE CONCLUDED</div>
+                <h1 style={{ color: 'var(--mahogany-dark)', fontSize: '28px', margin: '12px 0 16px', fontFamily: 'var(--font-heading)', textShadow: '0 1px 1px rgba(255,255,255,0.5)', lineHeight: 1.1, wordWrap: 'break-word' }}>LOG SUBMITTED</h1>
+                <p className="form-subtitle" style={{ color: 'var(--mahogany-dark)', fontWeight: 600, fontSize: '15px' }}>Your entry has been successfully recorded in the ship's log.</p>
+                
+                <div style={{ marginTop: '20px', padding: '16px', borderTop: '1px solid rgba(139, 94, 52, 0.25)' }}>
+                  <div className="form-kicker" style={{ marginBottom: '8px' }}>FINAL TALLY</div>
+                  <div style={{ fontSize: '42px', fontWeight: 700, color: 'var(--mahogany-dark)', fontFamily: 'var(--font-heading)', lineHeight: 1, textShadow: '0 1px 2px rgba(255,255,255,0.5)' }}>{stats?.score ?? 0}</div>
+                  
+                  <div style={{ marginTop: '16px', display: 'flex', gap: '24px', justifyContent: 'center' }}>
+                    <div>
+                      <div className="form-kicker" style={{ fontSize: '10px' }}>SOLVED</div>
+                      <strong style={{ fontSize: '18px', color: 'var(--mahogany-dark)', display: 'block', marginTop: '6px' }}>{stats?.solved ?? 0} / {stats?.totalProblems ?? round.problems.length}</strong>
+                    </div>
+                    <div>
+                      <div className="form-kicker" style={{ fontSize: '10px' }}>RANK</div>
+                      <strong style={{ fontSize: '18px', color: 'var(--mahogany-dark)', display: 'block', marginTop: '6px' }}>{stats?.rank ? `#${stats.rank}` : '--'}</strong>
+                    </div>
+                  </div>
                 </div>
               </div>
             </div>

@@ -4,8 +4,8 @@ import Script from 'next/script'
 import './globals.css'
 
 export const metadata: Metadata = {
-  title: 'ECHONA 2K26 — Treasure Voyage',
-  description: 'Join the Echona 2K26 Treasure Voyage.',
+  title: 'CODE CLASH — ECHONA 2K26',
+  description: 'Code Clash: Real-time competitive programming for the Echona 2K26 Treasure Voyage.',
   icons: {
     icon: [
       {

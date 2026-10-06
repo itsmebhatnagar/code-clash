@@ -1,7 +1,7 @@
 'use client'
 
 import { useEffect, useState, type ReactNode } from 'react'
-import { ArrowDown, ArrowUp, Check, ClipboardList, Copy, Database, Gavel, Lock, Plus, Save, Trash2, Upload } from 'lucide-react'
+import { ArrowDown, ArrowUp, Check, ClipboardList, Compass, Copy, Database, Gavel, Lock, Plus, Save, Trash2, Upload } from 'lucide-react'
 import { adminFetch, adminMutate } from '../../lib/api'
 import type { AdminProblem, AdminRound, AdminTestCase, Problem, ProblemExample } from '../../lib/types'
 import { useContestSocket } from '../../hooks/useContestSocket'
@@ -424,8 +424,8 @@ export function ContestSetup({ token, page, onNavigate, notify }: {
 
       <section className="round-management-grid">
         <div className="admin-section round-list-section">
-          <div className="workflow-section-heading"><div><div className="form-kicker">ROUND MANAGEMENT</div><h3>Rounds</h3></div><span className="round-count">{rounds.length}</span></div>
-          {loading ? <p>Loading rounds...</p> : rounds.length ? <div className="round-card-list">{rounds.map((round) => {
+          <div className="workflow-section-heading"><div><div className="form-kicker">VOYAGE MANAGEMENT</div><h3>Voyages</h3></div><span className="round-count">{rounds.length}</span></div>
+          {loading ? <div className="loading-state"><Compass className="compass-icon" size={24} /> <span>Mapping the voyages...</span></div> : rounds.length ? <div className="round-card-list">{rounds.map((round) => {
             const attached = problems.filter((problem) => problem.roundId === round.id).sort((first, second) => first.position - second.position)
             return <button type="button" className={round.id === selectedRoundId ? 'round-card selected' : 'round-card'} key={round.id} onClick={() => selectRound(round.id)}>
               <span className="round-card-top"><strong>{round.name}</strong><b className={`round-status status-${round.status.toLowerCase()}`}>{round.status}</b></span>

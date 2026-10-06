@@ -1,0 +1,61 @@
+name: code-clash
+
+services:
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6387:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    restart: unless-stopped
+
+  judge-runtime:
+    build:
+      context: ./backend
+      dockerfile: judge.Dockerfile
+    image: code-clash-judge:latest
+    command: ["sleep", "infinity"]
+    restart: unless-stopped
+    network_mode: none
+    read_only: true
+    tmpfs:
+      - /tmp:rw,nosuid,size=64m
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    ports:
+      - "5000:5000"
+    environment:
+      - REDIS_URL=redis://redis:6379
+      - DATABASE_URL=file:./dev.db
+    depends_on:
+      redis:
+        condition: service_healthy
+    restart: unless-stopped
+    # We mount the DB volume to persist the SQLite database
+    volumes:
+      - backend-db:/app/prisma
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    ports:
+      - "3000:3000"
+    environment:
+      - NEXT_PUBLIC_API_URL=http://localhost:5000
+    depends_on:
+      - backend
+    restart: unless-stopped
+
+volumes:
+  backend-db:
