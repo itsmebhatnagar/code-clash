@@ -22,4 +22,4 @@ RUN npx prisma generate
 RUN npm run build
 
 # Start both the API and the Worker concurrently
-CMD ["bash", "-c", "npm run db:deploy && node dist/worker.js & node dist/index.js & wait -n"]
+CMD ["bash", "-c", "npm run db:deploy && (node dist/worker.js & node dist/index.js & wait -n)"]
