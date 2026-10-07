@@ -7,10 +7,6 @@ services:
     region: oregon
     dockerfilePath: backend/Dockerfile
     dockerContext: backend
-    disk:
-      name: sqlite-data
-      mountPath: /app/prisma
-      sizeGB: 1
     envVars:
       - key: DATABASE_URL
         value: file:/app/prisma/dev.db
