@@ -337,8 +337,8 @@ button { cursor: pointer; }
   /* Maximize usable paper space while avoiding the actual rollers */
   top: 17%;
   bottom: 16%;
-  left: 17%;
-  right: 17%;
+  left: 22%;
+  right: 22%;
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -383,7 +383,7 @@ button { cursor: pointer; }
   margin: 0 auto 16px;
   text-shadow: 0 1px 1px rgba(255,255,255,0.4);
   text-align: center;
-  max-width: 300px;
+  max-width: 240px;
 }
 
 .form-wrap form, .register-grid {
@@ -444,30 +444,37 @@ input {
 input::placeholder { color: rgba(199, 160, 74, 0.4); }
 input:focus { border-color: var(--gold); box-shadow: 0 0 0 2px rgba(199, 160, 74, 0.15); }
 
-/* Old Wooden CTA Button */
+/* Premium Gold CTA Button */
 .gold-button {
   display: inline-flex; align-items: center; justify-content: center; gap: 8px;
   width: 100%; min-height: 42px; padding: 0 16px;
-  border: 1px solid #4a2c16;
+  border: 1px solid #F3E5AB;
   border-radius: 4px;
-  background: linear-gradient(180deg, #5c3a21 0%, #3a2211 100%);
-  color: var(--parchment-light);
-  font: 700 13px var(--font-heading);
+  background: linear-gradient(to bottom, #D4AF37 0%, #AA7700 100%);
+  color: #17100C;
+  font: 800 13px var(--font-heading);
   letter-spacing: .12em;
   text-transform: uppercase;
-  transition: all 0.3s ease;
+  transition: all 0.3s cubic-bezier(0.25, 0.8, 0.25, 1);
   box-shadow: 
-    0 4px 10px rgba(0, 0, 0, 0.4), 
-    inset 0 1px 0 rgba(255, 255, 255, 0.15),
-    inset 0 0 20px rgba(0, 0, 0, 0.5);
-  text-shadow: 0 2px 4px rgba(0,0,0,0.8);
+    0 4px 12px rgba(0, 0, 0, 0.25), 
+    inset 0 1px 1px rgba(255, 255, 255, 0.6),
+    inset 0 -2px 5px rgba(0, 0, 0, 0.25);
+  text-shadow: 0 1px 0 rgba(255,255,255,0.3);
 }
 .gold-button:hover {
-  background: linear-gradient(180deg, #6b4427 0%, #4a2c16 100%);
-  box-shadow: 0 6px 14px rgba(0, 0, 0, 0.5), inset 0 1px 0 rgba(255, 255, 255, 0.2), inset 0 0 20px rgba(0, 0, 0, 0.3);
-  transform: translateY(-1px);
+  background: linear-gradient(to bottom, #E5C354 0%, #C88F00 100%);
+  box-shadow: 
+    0 6px 16px rgba(212, 175, 55, 0.4), 
+    inset 0 1px 1px rgba(255, 255, 255, 0.8), 
+    inset 0 -2px 5px rgba(0, 0, 0, 0.25);
+  transform: translateY(-2px);
 }
-.gold-button:disabled { cursor: not-allowed; opacity: .6; filter: grayscale(50%); }
+.gold-button:active {
+  transform: translateY(1px);
+  box-shadow: 0 2px 4px rgba(0,0,0,0.2), inset 0 2px 4px rgba(0,0,0,0.3);
+}
+.gold-button:disabled { cursor: not-allowed; opacity: .6; filter: grayscale(80%); transform: none; box-shadow: none; }
 
 /* Glow Effect */
 .glow-effect {
@@ -492,29 +499,52 @@ input:focus { border-color: var(--gold); box-shadow: 0 0 0 2px rgba(199, 160, 74
 }
 .switch-copy-wrapper .switch-copy { margin: 0; color: var(--mahogany-dark); font: 700 14px var(--font-body); }
 .switch-copy { margin-top: 6px; color: rgba(43, 23, 16, 0.9); font: 600 13px var(--font-body); text-shadow: 0 1px 1px rgba(255,255,255,0.4); }
-.switch-copy-wrapper button, .back-button {
+
+.switch-copy-wrapper button {
   padding: 8px 16px; 
-  border: 1px solid rgba(139, 94, 52, 0.6); 
-  background: rgba(255, 248, 235, 0.8);
+  border: 1px solid var(--mahogany);
+  background: transparent;
   border-radius: 4px;
-  font-weight: 800; letter-spacing: 0.05em;
-  color: var(--mahogany-dark);
+  font: 800 13px var(--font-heading);
+  letter-spacing: 0.12em;
+  color: var(--mahogany);
   text-decoration: none;
-  transition: all 0.3s ease;
-  box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+  transition: all 0.3s cubic-bezier(0.25, 0.8, 0.25, 1);
   text-transform: uppercase;
 }
-.switch-copy-wrapper button:hover, .back-button:hover { 
-  background: rgba(255, 255, 255, 0.95); 
-  border-color: var(--mahogany-dark); 
-  color: #000; 
+.switch-copy-wrapper button:hover { 
+  background: var(--mahogany);
+  color: var(--parchment-light);
   transform: translateY(-2px);
-  box-shadow: 0 6px 12px rgba(0,0,0,0.15);
+  box-shadow: 0 6px 12px rgba(43, 23, 16, 0.2);
+}
+.switch-copy-wrapper button:active {
+  transform: translateY(1px);
+  box-shadow: 0 2px 4px rgba(43, 23, 16, 0.2);
 }
 
 .back-button {
   display: inline-flex; align-items: center; justify-content: center; gap: 6px;
-  width: 100%; margin-top: 10px; font-size: 13px; min-height: 40px;
+  width: 100%; margin-top: 10px; font-size: 13px; min-height: 42px;
+  border: 1px solid var(--mahogany);
+  background: transparent;
+  border-radius: 4px;
+  font: 800 13px var(--font-heading);
+  letter-spacing: 0.12em;
+  color: var(--mahogany);
+  text-decoration: none;
+  transition: all 0.3s cubic-bezier(0.25, 0.8, 0.25, 1);
+  text-transform: uppercase;
+}
+.back-button:hover { 
+  background: var(--mahogany);
+  color: var(--parchment-light);
+  transform: translateY(-2px);
+  box-shadow: 0 6px 12px rgba(43, 23, 16, 0.2);
+}
+.back-button:active {
+  transform: translateY(1px);
+  box-shadow: 0 2px 4px rgba(43, 23, 16, 0.2);
 }
 
 .register-actions {
@@ -1279,6 +1309,7 @@ input:focus { border-color: var(--gold); box-shadow: 0 0 0 2px rgba(199, 160, 74
 
 /* Round Management Grid */
 .round-management-grid { display: grid; grid-template-columns: minmax(260px, .78fr) minmax(0, 1.22fr); gap: 16px; align-items: start; }
+.round-management-grid > *:only-child { grid-column: 1 / -1; }
 .round-list-section, .round-detail-section { min-width: 0; }
 
 .round-count {
@@ -1480,7 +1511,7 @@ input:focus { border-color: var(--gold); box-shadow: 0 0 0 2px rgba(199, 160, 74
    METRIC CARDS (Shared)
    ═══════════════════════════════════════════════════════════════════ */
 
-.metric-grid { display: grid; grid-template-columns: repeat(6, 1fr); gap: 10px; max-width: 1100px; margin: 36px auto 0; }
+.metric-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; max-width: 1100px; margin: 36px auto 0; }
 .metric-card {
   min-height: 118px; padding: 16px;
   border: 1px solid var(--line);
@@ -1511,7 +1542,7 @@ input:focus { border-color: var(--gold); box-shadow: 0 0 0 2px rgba(199, 160, 74
   .admin-round-actions .admin-action { flex: 1; justify-content: center; }
   .participant-content { padding: 30px 20px 44px; }
   .workspace-body { grid-template-columns: minmax(230px, .9fr) minmax(0, 1.1fr); }
-  .metric-grid { grid-template-columns: repeat(3, 1fr); }
+  .metric-grid { grid-template-columns: repeat(2, 1fr); }
 }
 
 @media (max-width: 800px) {

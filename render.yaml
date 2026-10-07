@@ -1,0 +1,28 @@
+version: "1"
+services:
+  - type: web
+    name: code-clash-backend
+    runtime: docker
+    plan: free
+    region: oregon
+    rootDir: backend
+    dockerfilePath: ./Dockerfile
+    disk:
+      name: sqlite-data
+      mountPath: /app/prisma
+      sizeGB: 1
+    envVars:
+      - key: DATABASE_URL
+        value: file:/app/prisma/dev.db
+      - key: REDIS_URL
+        sync: false # Add this from your Upstash Dashboard manually
+      - key: JWT_SECRET
+        generateValue: true
+      - key: JUDGE_REQUIRE_SANDBOX
+        value: "false"
+      - key: FRONTEND_URL
+        sync: false # Set this to your Vercel URL
+      - key: ADMIN_EMAIL
+        sync: false
+      - key: ADMIN_PASSWORD
+        sync: false

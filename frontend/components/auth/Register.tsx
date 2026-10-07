@@ -10,7 +10,7 @@ const fields = [
   ['branch', 'Branch', 'Computer Science', GraduationCap],
   ['year', 'Year', '2nd year', Calendar],
   ['email', 'Email address', 'harshilbhatnagar@gmail.com', Mail],
-  ['password', 'Access code', 'Create an access code', Key]
+  ['password', 'Password', 'Create a password', Key]
 ] as const
 
 type FormData = Record<(typeof fields)[number][0], string>
