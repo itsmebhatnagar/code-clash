@@ -6,7 +6,8 @@ services:
     plan: free
     region: oregon
     rootDir: backend
-    dockerfilePath: ./Dockerfile
+    dockerfilePath: ./backend/Dockerfile
+    dockerContext: ./backend
     disk:
       name: sqlite-data
       mountPath: /app/prisma
