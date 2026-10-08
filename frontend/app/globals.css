@@ -866,38 +866,48 @@ input:focus { border-color: var(--gold); box-shadow: 0 0 0 2px rgba(199, 160, 74
 
 /* Problem Selector Tabs */
 .participant-problem-selector {
-  display: flex; align-items: stretch; gap: 7px;
-  margin-top: 12px; padding: 11px 0 13px;
+  display: flex; align-items: center; gap: 10px;
+  margin-top: 12px; padding: 10px 0 16px;
   overflow-x: auto;
   border-bottom: 1px solid rgba(199, 160, 74, 0.2);
-  scrollbar-color: var(--brass-dim) transparent;
+  scrollbar-width: none;
 }
+.participant-problem-selector::-webkit-scrollbar { display: none; }
 .participant-problem-selector > span {
-  display: flex; flex: 0 0 auto; align-items: center;
-  padding: 0 9px 0 2px;
-  color: var(--brass);
-  font: 10px var(--font-mono); letter-spacing: .06em;
+  flex: 0 0 auto; margin-right: 12px;
+  color: var(--muted);
+  font: 11px var(--font-mono); letter-spacing: .08em;
 }
 .participant-problem-selector button {
-  display: grid; grid-template-columns: auto minmax(110px, 1fr) auto;
-  align-items: center; gap: 8px;
-  min-width: 210px; min-height: 42px;
-  padding: 0 11px;
-  border: 1px solid rgba(199, 160, 74, 0.18);
-  border-radius: 3px;
-  background: rgba(13, 27, 42, 0.8);
+  display: flex; align-items: center; gap: 8px;
+  min-height: 38px;
+  padding: 0 16px;
+  border: 1px solid rgba(199, 160, 74, 0.15);
+  border-radius: 20px;
+  background: rgba(13, 27, 42, 0.5);
   color: var(--muted);
-  text-align: left;
+  font-size: 13px;
+  cursor: pointer;
+  white-space: nowrap;
   transition: all 0.2s ease;
 }
-.participant-problem-selector button.active {
-  border-color: var(--brass);
-  background: linear-gradient(100deg, rgba(199, 160, 74, 0.14), rgba(13, 27, 42, 0.95));
-  color: var(--ink);
+.participant-problem-selector button:hover {
+  border-color: rgba(199, 160, 74, 0.4);
+  background: rgba(13, 27, 42, 0.8);
 }
-.participant-problem-selector button > b { color: var(--gold); font: 11px var(--font-mono); }
-.participant-problem-selector button > span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 14px; }
-.participant-problem-selector button > small { color: var(--brass); font: 9px var(--font-mono); white-space: nowrap; }
+.participant-problem-selector button.active {
+  border-color: var(--gold);
+  background: rgba(199, 160, 74, 0.1);
+  color: var(--ink);
+  box-shadow: 0 0 12px rgba(199, 160, 74, 0.15);
+}
+.participant-problem-selector button > b {
+  color: var(--brass);
+  font: 12px var(--font-mono);
+}
+.participant-problem-selector button.active > b {
+  color: var(--gold);
+}
 
 /* Empty / Waiting State */
 .participant-empty {

@@ -1,12 +1,12 @@
 1:"$Sreact.fragment"
-2:I[47257,["/_next/static/chunks/3a_w8btrtbefq.js"],"ClientPageRoot"]
-3:I[31713,["/_next/static/chunks/3a_w8btrtbefq.js","/_next/static/chunks/2mc-plxe-k99h.js","/_next/static/chunks/21wfrib_sg2q6.js"],"default"]
-6:I[97367,["/_next/static/chunks/3a_w8btrtbefq.js"],"OutletBoundary"]
+2:I[73440,["/_next/static/chunks/0pgnvy4wv3gb8.js"],"ClientPageRoot"]
+3:I[48985,["/_next/static/chunks/0pgnvy4wv3gb8.js","/_next/static/chunks/3i101t24cc0nj.js","/_next/static/chunks/0t6ro9_0-5xmc.js"],"default"]
+6:I[64381,["/_next/static/chunks/0pgnvy4wv3gb8.js"],"OutletBoundary"]
 7:"$Sreact.suspense"
-b:I[97367,["/_next/static/chunks/3a_w8btrtbefq.js"],"ViewportBoundary"]
-c:I[97367,["/_next/static/chunks/3a_w8btrtbefq.js"],"MetadataBoundary"]
-d:I[27201,["/_next/static/chunks/3a_w8btrtbefq.js"],"IconMark"]
-:HL["/_next/static/chunks/1k4yydksm3vyo.css","style"]
+b:I[64381,["/_next/static/chunks/0pgnvy4wv3gb8.js"],"ViewportBoundary"]
+c:I[64381,["/_next/static/chunks/0pgnvy4wv3gb8.js"],"MetadataBoundary"]
+d:I[12843,["/_next/static/chunks/0pgnvy4wv3gb8.js"],"IconMark"]
+:HL["/_next/static/chunks/418-ykm8lyfqx.css","style"]
 a:X
 f:Tcb3,
               // 1. Instantly strip extension-injected attributes from the DOM before React hydrates
@@ -61,10 +61,10 @@ f:Tcb3,
                 if (originalOnError) return originalOnError.apply(this, arguments);
                 return false;
               };
-            0:{"buildId":"chpBGltoh5AGe9ERCpoQY","data":[{"rsc":["$","$1","c",{"children":[["$","$L2",null,{"Component":"$3","serverProvidedParams":{"searchParams":{},"params":{},"promises":["$@4","$@5"]}}],[["$","script","script-0",{"src":"/_next/static/chunks/2mc-plxe-k99h.js","async":true}],["$","script","script-1",{"src":"/_next/static/chunks/21wfrib_sg2q6.js","async":true}]],["$","$L6",null,{"children":["$","$7",null,{"name":"Next.MetadataOutlet","children":"$@8"}]}]]}],"isPartial":"$@9","staleTime":"$a","varyParams":null},{"rsc":["$","$1","h",{"children":[null,["$","$Lb",null,{"children":[["$","meta","0",{"charSet":"utf-8"}],["$","meta","1",{"name":"viewport","content":"width=device-width, initial-scale=1"}],["$","meta","2",{"name":"theme-color","content":"white","media":"(prefers-color-scheme: light)"}],["$","meta","3",{"name":"theme-color","content":"black","media":"(prefers-color-scheme: dark)"}],["$","meta","4",{"name":"color-scheme","content":"light dark"}]]}],["$","div",null,{"hidden":true,"children":["$","$Lc",null,{"children":["$","$7",null,{"name":"Next.Metadata","children":[["$","title","0",{"children":"CODE CLASH — ECHONA 2K26"}],["$","meta","1",{"name":"description","content":"Code Clash: Real-time competitive programming for the Echona 2K26 Treasure Voyage."}],["$","link","2",{"rel":"icon","href":"/icon-light-32x32.png","media":"(prefers-color-scheme: light)"}],["$","link","3",{"rel":"icon","href":"/icon-dark-32x32.png","media":"(prefers-color-scheme: dark)"}],["$","link","4",{"rel":"icon","href":"/icon.svg","type":"image/svg+xml"}],["$","link","5",{"rel":"apple-touch-icon","href":"/apple-icon.png"}],["$","$Ld","6",{}]]}]}]}],null]}],"isPartial":"$@e","staleTime":"$a","varyParams":null},{"rsc":["$","$1","c",{"children":[[["$","link","0",{"rel":"stylesheet","href":"/_next/static/chunks/1k4yydksm3vyo.css","precedence":"next"}],["$","script","script-0",{"src":"/_next/static/chunks/3a_w8btrtbefq.js","async":true}]],["$","html",null,{"lang":"en","className":"dark bg-background","suppressHydrationWarning":true,"children":[["$","head",null,{"suppressHydrationWarning":true,"children":["$","script",null,{"dangerouslySetInnerHTML":{"__html":"$f"}}]}],"$L10"]}]]}],"isPartial":"$@11","staleTime":"$a","varyParams":null}],"isUpgradeableISRFallback":false,"a":"$@12","rootVaryParams":null,"needsRuntimeRequest":"$@13"}
-14:I[39756,["/_next/static/chunks/3a_w8btrtbefq.js"],"default"]
-15:I[37457,["/_next/static/chunks/3a_w8btrtbefq.js"],"default"]
-16:I[2355,["/_next/static/chunks/3a_w8btrtbefq.js"],"Analytics"]
+            0:{"buildId":"d2HPlt7fuDiu1HpVGCxDE","data":[{"rsc":["$","$1","c",{"children":[["$","$L2",null,{"Component":"$3","serverProvidedParams":{"searchParams":{},"params":{},"promises":["$@4","$@5"]}}],[["$","script","script-0",{"src":"/_next/static/chunks/3i101t24cc0nj.js","async":true}],["$","script","script-1",{"src":"/_next/static/chunks/0t6ro9_0-5xmc.js","async":true}]],["$","$L6",null,{"children":["$","$7",null,{"name":"Next.MetadataOutlet","children":"$@8"}]}]]}],"isPartial":"$@9","staleTime":"$a","varyParams":null},{"rsc":["$","$1","h",{"children":[null,["$","$Lb",null,{"children":[["$","meta","0",{"charSet":"utf-8"}],["$","meta","1",{"name":"viewport","content":"width=device-width, initial-scale=1"}],["$","meta","2",{"name":"theme-color","content":"white","media":"(prefers-color-scheme: light)"}],["$","meta","3",{"name":"theme-color","content":"black","media":"(prefers-color-scheme: dark)"}],["$","meta","4",{"name":"color-scheme","content":"light dark"}]]}],["$","div",null,{"hidden":true,"children":["$","$Lc",null,{"children":["$","$7",null,{"name":"Next.Metadata","children":[["$","title","0",{"children":"CODE CLASH — ECHONA 2K26"}],["$","meta","1",{"name":"description","content":"Code Clash: Real-time competitive programming for the Echona 2K26 Treasure Voyage."}],["$","link","2",{"rel":"icon","href":"/icon-light-32x32.png","media":"(prefers-color-scheme: light)"}],["$","link","3",{"rel":"icon","href":"/icon-dark-32x32.png","media":"(prefers-color-scheme: dark)"}],["$","link","4",{"rel":"icon","href":"/icon.svg","type":"image/svg+xml"}],["$","link","5",{"rel":"apple-touch-icon","href":"/apple-icon.png"}],["$","$Ld","6",{}]]}]}]}],null]}],"isPartial":"$@e","staleTime":"$a","varyParams":null},{"rsc":["$","$1","c",{"children":[[["$","link","0",{"rel":"stylesheet","href":"/_next/static/chunks/418-ykm8lyfqx.css","precedence":"next"}],["$","script","script-0",{"src":"/_next/static/chunks/0pgnvy4wv3gb8.js","async":true}]],["$","html",null,{"lang":"en","className":"dark bg-background","suppressHydrationWarning":true,"children":[["$","head",null,{"suppressHydrationWarning":true,"children":["$","script",null,{"dangerouslySetInnerHTML":{"__html":"$f"}}]}],"$L10"]}]]}],"isPartial":"$@11","staleTime":"$a","varyParams":null}],"isUpgradeableISRFallback":false,"a":"$@12","rootVaryParams":null,"needsRuntimeRequest":"$@13"}
+14:I[32035,["/_next/static/chunks/0pgnvy4wv3gb8.js"],"default"]
+15:I[91168,["/_next/static/chunks/0pgnvy4wv3gb8.js"],"default"]
+16:I[75710,["/_next/static/chunks/0pgnvy4wv3gb8.js"],"Analytics"]
 4:{}
 5:"$0:data:0:rsc:props:children:0:props:serverProvidedParams:params"
 8:null
