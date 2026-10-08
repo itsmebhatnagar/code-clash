@@ -39,7 +39,8 @@ function Operations({ token, notify }: { token: string; notify: (message: Messag
   const [workstations, setWorkstations] = useState<AdminWorkstation[]>([])
   const [pcNumber, setPcNumber] = useState('')
   const [participantId, setParticipantId] = useState('')
-  const [adjustmentId, setAdjustmentId] = useState('')
+  const [disqualifyTarget, setDisqualifyTarget] = useState<{id: string, name: string} | null>(null)
+  const [disqualifyReason, setDisqualifyReason] = useState('')
   const [loading, setLoading] = useState(true)
 
   async function load() {
@@ -51,13 +52,21 @@ function Operations({ token, notify }: { token: string; notify: (message: Messag
   }
   useEffect(() => { void load() }, [token])
 
-  async function changeStatus(id: string, status: string) {
-    const reason = status === 'DISQUALIFIED' ? window.prompt('Reason for disqualification') : undefined
+  async function changeStatus(id: string, status: string, reason?: string) {
     if (status === 'DISQUALIFIED' && !reason) return
     const result = await adminMutate<Participant>(token, `/participants/${id}/status`, 'PUT', { status, reason, collegeIdVerified: true })
     if (!result.response.ok) return notify({ kind: 'error', text: 'Could not update participant status.' })
     notify({ kind: 'success', text: `Participant marked ${status.toLowerCase()}.` })
     void load()
+  }
+
+  function handleDisqualifySubmit(e: React.FormEvent) {
+    e.preventDefault();
+    if (disqualifyTarget && disqualifyReason) {
+      void changeStatus(disqualifyTarget.id, 'DISQUALIFIED', disqualifyReason);
+      setDisqualifyTarget(null);
+      setDisqualifyReason('');
+    }
   }
 
   async function assignWorkstation(event: React.FormEvent<HTMLFormElement>) {
@@ -73,7 +82,25 @@ function Operations({ token, notify }: { token: string; notify: (message: Messag
     notify({ kind: 'success', text: 'Workstation released.' }); void load()
   }
 
-  return <div className="admin-grid two-columns"><AdminSection title="Crew access" icon={<Users size={16} />}><div className="admin-table">{loading ? <div className="loading-state"><Compass className="compass-icon" size={24} /> <span>Gathering crew manifest...</span></div> : participants.map((participant) => <div className="admin-row" key={participant.id}><div><strong>{participant.name}</strong><small>{participant.email} · {participant.collegeId || 'No college ID'}</small></div><b>{participant.status}</b><div className="row-actions"><button className="mini-button" onClick={() => void changeStatus(participant.id, 'CHECKED_IN')}><UserCheck size={13} /> Check in</button><button className="mini-button danger" onClick={() => void changeStatus(participant.id, 'DISQUALIFIED')}><X size={13} /> Disqualify</button></div></div>)}</div></AdminSection><AdminSection title="Stations" icon={<Monitor size={16} />}><form className="inline-form" onSubmit={assignWorkstation}><input aria-label="PC number" placeholder="PC-01" value={pcNumber} onChange={(event) => setPcNumber(event.target.value)} required /><select aria-label="Participant" value={participantId} onChange={(event) => setParticipantId(event.target.value)} required><option value="">Select pirate</option>{participants.filter((participant) => participant.status !== 'DISQUALIFIED').map((participant) => <option value={participant.id} key={participant.id}>{participant.name}</option>)}</select><button className="gold-button" type="submit"><Plus size={14} /> Assign</button></form><div className="admin-table">{workstations.map((workstation) => <div className="admin-row" key={workstation.id}><div><strong>{workstation.pcNumber}</strong><small>{workstation.participant?.name || 'Unassigned'}</small></div><button className="mini-button" onClick={() => void releaseWorkstation(workstation.id)}>Release</button></div>)}{!workstations.length && <p className="empty-roster">No stations configured.</p>}</div></AdminSection></div>
+  return <div className="admin-grid two-columns"><AdminSection title="Crew access" icon={<Users size={16} />}><div className="admin-table">{loading ? <div className="loading-state"><Compass className="compass-icon" size={24} /> <span>Gathering crew manifest...</span></div> : participants.map((participant) => <div className="admin-row" key={participant.id}><div><strong>{participant.name}</strong><small>{participant.email} · {participant.collegeId || 'No college ID'}</small></div><b>{participant.status}</b><div className="row-actions"><button className="mini-button" onClick={() => void changeStatus(participant.id, 'CHECKED_IN')}><UserCheck size={13} /> Check in</button><button className="mini-button danger" onClick={() => setDisqualifyTarget({ id: participant.id, name: participant.name })}><X size={13} /> Disqualify</button></div></div>)}</div></AdminSection><AdminSection title="Stations" icon={<Monitor size={16} />}><form className="inline-form" onSubmit={assignWorkstation}><input aria-label="PC number" placeholder="PC-01" value={pcNumber} onChange={(event) => setPcNumber(event.target.value)} required /><select aria-label="Participant" value={participantId} onChange={(event) => setParticipantId(event.target.value)} required><option value="">Select pirate</option>{participants.filter((participant) => participant.status !== 'DISQUALIFIED').map((participant) => <option value={participant.id} key={participant.id}>{participant.name}</option>)}</select><button className="gold-button" type="submit"><Plus size={14} /> Assign</button></form><div className="admin-table">{workstations.map((workstation) => <div className="admin-row" key={workstation.id}><div><strong>{workstation.pcNumber}</strong><small>{workstation.participant?.name || 'Unassigned'}</small></div><button className="mini-button" onClick={() => void releaseWorkstation(workstation.id)}>Release</button></div>)}{!workstations.length && <p className="empty-roster">No stations configured.</p>}</div></AdminSection>
+  {disqualifyTarget && (
+    <div style={{ position: 'fixed', inset: 0, zIndex: 10000, background: 'rgba(0, 0, 0, 0.85)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+      <div style={{ background: '#050d1a', border: '1px solid #d4af37', padding: '24px', borderRadius: '8px', width: '400px', maxWidth: '90%', boxShadow: '0 4px 24px rgba(212, 175, 55, 0.15)' }}>
+        <h3 style={{ color: '#d4af37', marginTop: 0, marginBottom: '8px', fontSize: '18px', display: 'flex', alignItems: 'center', gap: '8px', fontFamily: 'Courier New, monospace', fontWeight: 'bold' }}>
+          <X size={18} /> Disqualify {disqualifyTarget.name}
+        </h3>
+        <p style={{ color: '#a0aec0', fontSize: '13px', marginBottom: '16px', lineHeight: 1.5 }}>Provide a reason for disqualifying this participant. This will terminate their session.</p>
+        <form onSubmit={handleDisqualifySubmit} style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+          <input autoFocus placeholder="Reason for disqualification..." value={disqualifyReason} onChange={e => setDisqualifyReason(e.target.value)} required style={{ padding: '10px 12px', background: 'rgba(0,0,0,0.5)', border: '1px solid #d4af37', color: '#fff', borderRadius: '4px', outline: 'none', fontFamily: 'inherit', fontSize: '14px' }} />
+          <div style={{ display: 'flex', gap: '8px', justifyContent: 'flex-end', marginTop: '12px' }}>
+            <button type="button" onClick={() => { setDisqualifyTarget(null); setDisqualifyReason(''); }} className="back-button" style={{ margin: 0, padding: '8px 16px', fontSize: '12px' }}>CANCEL</button>
+            <button type="submit" className="gold-button glow-effect" style={{ margin: 0, padding: '8px 16px', fontSize: '12px', color: '#fff', background: '#991b1b', border: '1px solid #f87171' }}>CONFIRM</button>
+          </div>
+        </form>
+      </div>
+    </div>
+  )}
+  </div>
 }
 
 function ReviewDesk({ token, notify }: { token: string; notify: (message: Message) => void }) {
