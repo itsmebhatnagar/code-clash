@@ -18,7 +18,7 @@ services:
         value: "false"
       - key: FRONTEND_URL
         sync: false # Set this to your Vercel URL
-      - key: ADMIN_EMAIL
+      - key: admin@echona2026.com
         sync: false
-      - key: ADMIN_PASSWORD
+      - key: admin@echona-2026
         sync: false
