@@ -832,6 +832,10 @@ input:focus { border-color: var(--gold); box-shadow: 0 0 0 2px rgba(199, 160, 74
   color: var(--ink);
   font: 12px var(--font-mono);
 }
+.editor-toolbar select option {
+  background-color: #050d1a;
+  color: var(--ink);
+}
 
 .monaco-editor-shell {
   min-height: 436px; height: 436px;
