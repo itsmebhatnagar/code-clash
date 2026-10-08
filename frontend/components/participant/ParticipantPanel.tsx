@@ -118,6 +118,7 @@ export function ParticipantPanel({ user, token, onLogout }: { user: User; token:
 
   const [isRoundFinished, setIsRoundFinished] = useState(false)
   const [fullscreenWarning, setFullscreenWarning] = useState(false)
+  const [systemAlert, setSystemAlert] = useState<string | null>(null)
 
   const readingEndsAt = round?.readingEndsAt ? Date.parse(round.readingEndsAt) : 0
   const roundEndsAt = round?.endsAt ? Date.parse(round.endsAt) : 0
@@ -146,14 +147,14 @@ export function ParticipantPanel({ user, token, onLogout }: { user: User; token:
 
     const handleFullscreenChange = () => {
       if (!document.fullscreenElement && !isRoundFinished && !isRoundOver) {
-        alert("⚠️ ANTI-CHEAT ALERT: You exited fullscreen mode! Your round has been forcefully submitted.");
+        setSystemAlert("ANTI-CHEAT ALERT: You exited fullscreen mode! Your round has been forcefully submitted.");
         submitRef.current(true);
       }
     };
 
     const handleVisibilityChange = () => {
       if (document.hidden && !isRoundFinished && !isRoundOver) {
-        alert("⚠️ ANTI-CHEAT ALERT: You switched tabs or minimized the window! Your round has been forcefully submitted.");
+        setSystemAlert("ANTI-CHEAT ALERT: You switched tabs or minimized the window! Your round has been forcefully submitted.");
         submitRef.current(true);
       }
     };
@@ -205,7 +206,7 @@ export function ParticipantPanel({ user, token, onLogout }: { user: User; token:
     if (isSubmitting || isRoundFinished) return
     const problemIds = round?.problems.filter((problem) => drafts[problem.id]?.trim()).map((problem) => problem.id) ?? []
     if (problemIds.length === 0 && !forceCheat) {
-      alert("You haven't written any code yet!")
+      setSystemAlert("You haven't written any code yet!")
       return
     }
     setIsSubmitting(true)
@@ -232,6 +233,19 @@ export function ParticipantPanel({ user, token, onLogout }: { user: User; token:
         <ShieldCheck size={64} style={{ color: 'var(--brand-gold)', marginBottom: '20px' }} />
         <h1 style={{ fontSize: '32px', marginBottom: '10px' }}>ENTER FULLSCREEN TO BEGIN</h1>
         <p style={{ fontSize: '18px', color: '#ccc' }}>Click anywhere on the screen to enter full-screen mode and start the round.</p>
+      </div>
+    )}
+    {systemAlert && (
+      <div style={{ position: 'fixed', inset: 0, zIndex: 10000, background: 'rgba(0, 0, 0, 0.85)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+        <div style={{ background: '#050d1a', border: '1px solid #d4af37', padding: '24px', borderRadius: '8px', width: '420px', maxWidth: '90%', boxShadow: '0 4px 24px rgba(212, 175, 55, 0.15)' }}>
+          <h3 style={{ color: '#d4af37', marginTop: 0, marginBottom: '12px', fontSize: '18px', display: 'flex', alignItems: 'center', gap: '8px', fontFamily: 'Courier New, monospace', fontWeight: 'bold' }}>
+            <span style={{ fontSize: '20px' }}>⚠️</span> SYSTEM ALERT
+          </h3>
+          <p style={{ color: '#e2e8f0', fontSize: '14px', marginBottom: '20px', lineHeight: 1.5 }}>{systemAlert}</p>
+          <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
+            <button onClick={() => setSystemAlert(null)} className="gold-button glow-effect" style={{ margin: 0, padding: '8px 24px', fontSize: '13px' }}>ACKNOWLEDGE</button>
+          </div>
+        </div>
       </div>
     )}
     <header className="participant-topbar"><div className="brand-lockup"><span className="brand-mark">◈</span><strong>CODE CLASH</strong></div>{round && <div className="participant-status"><span><span className="status-dot" /> LIVE COMPETITION</span><b>{round.name}</b></div>}<button className="icon-button" aria-label="Sign out" title="Sign out" onClick={onLogout}><LogOut size={16} /></button></header>
