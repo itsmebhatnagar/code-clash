@@ -223,8 +223,8 @@ export async function updateParticipantStatus(
       status,
       checkedInAt: status === 'CHECKED_IN' ? new Date() : undefined,
       collegeIdVerified: status === 'CHECKED_IN' ? Boolean(collegeIdVerified ?? true) : undefined,
-      disqualificationReason: status === 'DISQUALIFIED' ? reason : undefined,
-      lockedAt: status === 'DISQUALIFIED' ? new Date() : undefined,
+      disqualificationReason: status === 'DISQUALIFIED' ? reason : null,
+      lockedAt: status === 'DISQUALIFIED' ? new Date() : null,
     },
   });
 
