@@ -45,6 +45,8 @@ export function SignIn({ onRegister, onLogin }: { onRegister: () => void; onLogi
               </div>
             </label>
             
+            {message && <p className="form-message" role="status" style={{ color: message.toLowerCase().includes('error') || message.toLowerCase().includes('failed') ? '#991b1b' : 'var(--mahogany-dark)', fontWeight: 700, fontSize: '13px', textAlign: 'center', margin: '8px 0 0 0' }}>{message}</p>}
+            
             <div style={{ display: 'flex', gap: '8px', marginTop: '12px' }}>
               <button className="gold-button glow-effect" type="submit" style={{ flex: 1, margin: 0, padding: '0 8px', fontSize: '12px', minHeight: '40px' }}>
                 BOARD THE SHIP
@@ -54,8 +56,6 @@ export function SignIn({ onRegister, onLogin }: { onRegister: () => void; onLogi
               </button>
             </div>
           </form>
-          
-          {message && <p className="form-message" role="status" style={{ background: 'rgba(255,255,255,0.5)', color: 'var(--mahogany-dark)', fontWeight: 700, padding: '6px', borderRadius: '4px', textAlign: 'center', border: '1px solid rgba(139, 94, 52, 0.3)', marginTop: '8px' }}>{message}</p>}
         </div>
       </div>
     </div>

@@ -58,6 +58,8 @@ export function Register({ onSignIn }: { onSignIn: () => void }) {
               </label>
             ))}
             
+            {message && <p className="form-message" role="status" style={{ color: message.toLowerCase().includes('error') || message.toLowerCase().includes('failed') ? '#991b1b' : 'var(--mahogany-dark)', fontWeight: 700, fontSize: '13px', textAlign: 'center', margin: '8px 0 0 0', gridColumn: '1 / -1' }}>{message}</p>}
+
             <div style={{ display: 'flex', gap: '8px', gridColumn: '1 / -1', marginTop: '6px' }}>
               <button className="gold-button glow-effect" type="submit" style={{ flex: 1, margin: 0, padding: '0 8px', fontSize: '12px', minHeight: '40px' }}>
                 CREATE ACCOUNT
@@ -67,8 +69,6 @@ export function Register({ onSignIn }: { onSignIn: () => void }) {
               </button>
             </div>
           </form>
-          
-          {message && <p className="form-message" role="status" style={{ background: 'rgba(255,255,255,0.5)', color: 'var(--mahogany-dark)', fontWeight: 700, padding: '8px', borderRadius: '4px', textAlign: 'center', border: '1px solid rgba(139, 94, 52, 0.3)', marginTop: '12px' }}>{message}</p>}
         </div>
       </div>
     </div>
